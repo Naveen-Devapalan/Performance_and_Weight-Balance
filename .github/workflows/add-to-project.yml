@@ -16,11 +16,11 @@ jobs:
     name: Add issue or PR to project
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/add-to-project@v1
+      - uses: actions/add-to-project@main
         with:
           # Replace with your project URL
-          project-url: https://github.com/orgs/Naveen-Devapalan/projects/1
-          github-token: ${{ secrets.ADD_TO_PROJECT_PAT }}
+          project-url: https://github.com/users/Naveen-Devapalan/projects/4/views/1
+          github-token: ${{ secrets.ACCESS_TOKEN }}
           # Optional: Add label filtering
           # labeled: 'bug,enhancement'
           # label-operator: OR
