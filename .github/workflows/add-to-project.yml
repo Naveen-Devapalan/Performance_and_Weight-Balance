@@ -1,0 +1,26 @@
+name: Add Issues and PRs to Project
+
+on:
+  issues:
+    types:
+      - opened
+      - labeled
+      - transferred
+  pull_request:
+    types:
+      - opened
+      - labeled
+
+jobs:
+  add-to-project:
+    name: Add issue or PR to project
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/add-to-project@v1
+        with:
+          # Replace with your project URL
+          project-url: https://github.com/orgs/Naveen-Devapalan/projects/1
+          github-token: ${{ secrets.ADD_TO_PROJECT_PAT }}
+          # Optional: Add label filtering
+          # labeled: 'bug,enhancement'
+          # label-operator: OR

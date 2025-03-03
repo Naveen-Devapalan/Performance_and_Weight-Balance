@@ -43,9 +43,6 @@ Thumbs.db
 # TypeScript build artifacts
 *.tsbuildinfo
 
-# GitHub workflows (as requested)
-.github/
-
 # Optional npm cache directory
 .npm
 
