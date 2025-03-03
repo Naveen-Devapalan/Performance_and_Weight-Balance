@@ -1,0 +1,10 @@
+{
+  "name": "performance-charts-calculator",
+  "version": "0.1.0",
+  "description": "Performance Charts Calculator for Tecnam P2008JC aircraft",
+  "private": true,
+  "scripts": {},
+  "keywords": ["aviation", "performance", "weight-and-balance"],
+  "author": "Naveen Devapalan",
+  "license": "MIT"
+}
