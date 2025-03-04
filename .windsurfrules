@@ -1,4 +1,10 @@
 STRICTLY NEVER create, update,close issues without my instructions.
+
+when updating an issue - 
+ 1.	Retrieve the issue body
+ 2.	Update the checklist in the issue body
+ 3.	Add a progress comment
+
 ---
 KISS - KEEP IT SIMPLE STABLE.	
 ---
