@@ -3,8 +3,27 @@
   "version": "0.1.0",
   "description": "Performance Charts Calculator for Tecnam P2008JC aircraft",
   "private": true,
-  "scripts": {},
-  "keywords": ["aviation", "performance", "weight-and-balance"],
+  "scripts": {
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "lint": "echo 'No linting configured yet'",
+    "build": "tsc"
+  },
+  "keywords": [
+    "aviation",
+    "performance",
+    "weight-and-balance"
+  ],
   "author": "Naveen Devapalan",
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "@jest/globals": "^29.7.0",
+    "@types/jest": "^29.5.14",
+    "@types/sqlite3": "^3.1.11",
+    "ts-jest": "^29.2.6"
+  },
+  "dependencies": {
+    "sqlite3": "^5.1.7"
+  }
 }
