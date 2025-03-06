@@ -19,7 +19,7 @@ jobs:
       - uses: actions/add-to-project@main
         with:
           # Replace with your project URL
-          project-url: https://github.com/users/Naveen-Devapalan/projects/4/views/1
+          project-url: https://github.com/users/Naveen-Devapalan/projects/5/views/1
           github-token: ${{ secrets.ACCESS_TOKEN }}
           # Optional: Add label filtering
           # labeled: 'bug,enhancement'

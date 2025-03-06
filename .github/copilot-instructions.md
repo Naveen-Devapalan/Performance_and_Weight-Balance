@@ -6,7 +6,17 @@ when updating an issue -
  3.	Add a progress comment
 
 ---
-KISS - KEEP IT SIMPLE STABLE.	
+KISS - KEEP IT SIMPLE STABLE.
+
+### Follow the SOLID Principles
+
+1. Single Responsibility: Each class should have only one reason to change.
+2. Open-Closed: Classes should be open for extension but closed for modification.
+3. Liskov Substitution: Derived classes must be substitutable for their base classes.
+4. Interface Segregation: Many client-specific interfaces are better than one general-purpose interface.
+5. Dependency Inversion: Depend on abstractions, not concretions.
+
+Test driven development - RED GREEN REFACTOR.
 ---
 To ensure you properly follow technical documentation in the future, I'll implement these specific practices:
 
