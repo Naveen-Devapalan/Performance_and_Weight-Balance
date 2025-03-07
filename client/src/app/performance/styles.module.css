@@ -1,0 +1,198 @@
+.performanceContainer {
+  @apply w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8;
+}
+
+.tabsWrapper {
+  @apply flex justify-center mb-8;
+  margin: 0 auto;
+}
+
+.tabsList {
+  @apply w-auto bg-white/80 dark:bg-gray-950/80 backdrop-blur-[8px] 
+         border border-primary/30 dark:border-primary/30 p-1 rounded-lg;
+}
+
+/* Custom styles for tab triggers */
+.coloredTabTrigger {
+  @apply bg-primary text-primary-foreground font-medium px-6 py-1.5;
+}
+
+.inactiveTabTrigger {
+  @apply bg-transparent text-foreground hover:bg-primary/10 hover:text-primary transition-colors duration-200 px-6 py-1.5;
+}
+
+.partSelection {
+  @apply flex justify-center items-center gap-6 mb-6 p-4 
+         bg-white/80 dark:bg-gray-950/80 backdrop-blur-[8px] 
+         border border-white/20 dark:border-gray-800/20 rounded-lg;
+}
+
+.partSelection label {
+  @apply flex items-center gap-2 text-sm font-medium cursor-pointer
+         transition-colors hover:text-primary hover:-translate-y-0.5 duration-200;
+}
+
+.inputSection {
+  @apply space-y-6 mb-8 animate-fade-in;
+}
+
+.badgeContainer {
+  @apply flex items-center gap-3 mb-4;
+}
+
+.gridLayout {
+  @apply grid grid-cols-1 md:grid-cols-2 gap-6;
+}
+
+.calculationCard {
+  @apply bg-white/80 dark:bg-gray-950/80 backdrop-blur-[8px] 
+         border border-white/20 dark:border-gray-800/20 rounded-lg shadow-lg 
+         shadow-black/5 dark:shadow-white/5
+         hover:-translate-y-0.5 transition-all duration-200;
+}
+
+.calculationHeading {
+  @apply text-lg font-semibold text-foreground/90 mb-3 border-b border-border/50 pb-2;
+}
+
+.calculationText {
+  @apply text-sm text-muted-foreground space-y-1 mb-4;
+}
+
+.windComponents {
+  @apply grid grid-cols-2 gap-6 p-4 mb-4
+         bg-white/80 dark:bg-gray-950/80 backdrop-blur-[8px] 
+         border border-white/20 dark:border-gray-800/20 rounded-lg;
+}
+
+.calculationLabel {
+  @apply text-sm font-medium text-foreground/75;
+}
+
+.calculationValue {
+  @apply font-mono text-sm tabular-nums text-foreground/90;
+}
+
+.importantValue {
+  @apply font-mono font-semibold text-primary text-base;
+}
+
+.windValue {
+  @apply font-mono text-foreground/90 font-medium;
+}
+
+.calculationStep {
+  @apply mb-6 bg-white/50 dark:bg-gray-900/50 p-4 rounded-md border border-border/30;
+}
+
+.separator {
+  @apply my-8 border-border/50;
+}
+
+.buttonContainer {
+  @apply flex justify-center mt-10 mb-6;
+}
+
+.calculateButton {
+  @apply w-full max-w-xs relative 
+         bg-primary/90 dark:bg-primary/90 backdrop-blur-[8px] 
+         border border-primary/30 dark:border-primary/30 rounded-lg
+         hover:-translate-y-0.5 transition-all duration-200
+         hover:shadow-lg hover:shadow-primary/20
+         text-primary-foreground font-medium py-3 px-4;
+}
+
+.calculateButton:disabled {
+  @apply opacity-50 cursor-not-allowed;
+}
+
+.errorAlert {
+  @apply mt-6 animate-fade-in;
+}
+
+.errorList {
+  @apply list-disc pl-5 mt-2 space-y-1;
+}
+
+.errorListItem {
+  @apply text-sm text-destructive-foreground/90;
+}
+
+.numericValue {
+  @apply font-mono tabular-nums text-foreground/90;
+}
+
+.resultAlert {
+  @apply mb-6 animate-fade-in;
+}
+
+.formField {
+  @apply space-y-2;
+}
+
+.formLabel {
+  @apply text-sm font-medium text-foreground/90;
+}
+
+.formDescription {
+  @apply text-xs text-muted-foreground mt-1;
+}
+
+.cardSection {
+  @apply space-y-4 p-6 
+         bg-white/80 dark:bg-gray-950/80 backdrop-blur-[8px] 
+         border border-white/20 dark:border-gray-800/20 rounded-lg
+         hover:-translate-y-0.5 transition-all duration-200;
+}
+
+.cardTitle {
+  @apply text-lg font-semibold tracking-tight;
+}
+
+.cardContent {
+  @apply space-y-4;
+}
+
+.statusBadge {
+  @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold
+         transition-colors focus:outline-none focus:ring-2 focus:ring-ring 
+         focus:ring-offset-2;
+}
+
+.statusBadge.success {
+  @apply bg-success/10 text-success-foreground;
+}
+
+.statusBadge.warning {
+  @apply bg-warning/10 text-warning-foreground;
+}
+
+.statusBadge.error {
+  @apply bg-destructive/10 text-destructive;
+}
+
+.progressSection {
+  @apply space-y-2;
+}
+
+.progressLabel {
+  @apply text-sm font-medium text-foreground/75;
+}
+
+.progressValue {
+  @apply text-sm text-foreground/90;
+}
+
+@media (max-width: 640px) {
+  .gridLayout {
+    @apply grid-cols-1;
+  }
+
+  .windComponents {
+    @apply grid-cols-1;
+  }
+
+  .calculateButton {
+    @apply max-w-full;
+  }
+}

@@ -25,49 +25,55 @@ interface SectionProps {
 
 export function PerformanceLayout({ children, title }: LayoutProps) {
   return (
-    <>
-      <BackgroundPattern />
-      <div className="relative container max-w-5xl mx-auto p-4 space-y-6 pb-20">
-        <div className="text-center space-y-2">
-          <h1 className="text-3xl font-bold mb-2 bg-clip-text text-transparent bg-gradient-to-r from-zinc-900 to-zinc-500">
-            {title}
-          </h1>
-          <h2 className="text-xl font-semibold text-zinc-700">TECNAM P2008JC</h2>
-          <Separator className="my-4" />
+    <div className="relative min-h-screen bg-background">
+      <BackgroundPattern className="absolute inset-0 -z-10 opacity-50" />
+      <div className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+        <div className="flex flex-col items-center space-y-8">
+          <div className="text-center space-y-2">
+            <h1 className="text-3xl font-bold tracking-tighter sm:text-4xl md:text-5xl">
+              {title}
+            </h1>
+            <p className="text-muted-foreground max-w-[700px] text-sm sm:text-base">
+              Calculate aircraft performance parameters with precision and accuracy
+            </p>
+          </div>
+          <div className="w-full max-w-4xl rounded-lg border bg-card/95 backdrop-blur-sm shadow-sm">
+            <div className="p-6 sm:p-8">
+              {children}
+            </div>
+          </div>
         </div>
-        {children}
       </div>
-    </>
+    </div>
   );
 }
 
 export function PerformanceInputSection({ children, title, description }: SectionProps) {
   return (
-    <Card className="border-zinc-200 shadow-sm backdrop-blur-sm bg-white/80">
-      <CardHeader className="bg-zinc-50/80 border-b border-zinc-100">
-        <CardTitle className="text-xl text-zinc-900">{title} - [USER INPUTS]</CardTitle>
-        {description && <CardDescription>{description}</CardDescription>}
-      </CardHeader>
-      <CardContent className="p-6 pt-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {children}
-        </div>
-      </CardContent>
-    </Card>
+    <div className="space-y-4 rounded-lg border bg-card/50 p-4 backdrop-blur-sm sm:p-6">
+      <div className="space-y-1">
+        <h3 className="text-xl font-semibold tracking-tight">{title}</h3>
+        {description && (
+          <div className="text-sm text-muted-foreground">
+            {description}
+          </div>
+        )}
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        {children}
+      </div>
+    </div>
   );
 }
 
 export function PerformanceOutputSection({ children, title, description }: SectionProps) {
   return (
-    <Card className="border-zinc-200 shadow-sm backdrop-blur-sm bg-white/80">
-      <CardHeader className="bg-zinc-50/80 border-b border-zinc-100">
-        <CardTitle className="text-xl text-zinc-900">{title}</CardTitle>
-        {description && <CardDescription>{description}</CardDescription>}
-      </CardHeader>
-      <CardContent className="p-6">
+    <div className="space-y-4 rounded-lg border bg-card/50 p-4 backdrop-blur-sm animate-in fade-in-50 duration-300 sm:p-6">
+      <h3 className="text-xl font-semibold tracking-tight">{title}</h3>
+      <div className="space-y-4">
         {children}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 
@@ -80,18 +86,12 @@ interface FieldValueProps {
 
 export function FieldValue({ label, value, units, output = false }: FieldValueProps) {
   return (
-    <div className={`${output ? 'bg-zinc-50/80 border border-zinc-100' : ''} p-3 rounded-md`}>
-      <label className="block text-sm font-medium text-zinc-700">{label}</label>
-      <div className="mt-1">
-        {value ? (
-          <>
-            <span className="text-lg font-semibold text-zinc-900 font-mono tabular-nums">{value}</span>
-            {units && <span className="text-sm text-zinc-600 ml-1">{units}</span>}
-          </>
-        ) : (
-          <span className="text-sm text-zinc-500 italic">Not specified</span>
-        )}
-      </div>
+    <div className="flex justify-between items-center py-2 border-b border-border/50 last:border-0">
+      <span className="text-sm font-medium text-muted-foreground">{label}</span>
+      <span className="font-mono tabular-nums text-sm">
+        {value}
+        {units && <span className="ml-1 text-muted-foreground">{units}</span>}
+      </span>
     </div>
   );
 }

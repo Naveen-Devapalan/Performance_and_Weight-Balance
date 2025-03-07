@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import styles from './styles.module.css';
 import {
   PerformanceLayout,
   PerformanceInputSection,
@@ -88,6 +89,12 @@ export default function PerformanceCalculator() {
   });
 
   const [errors, setErrors] = useState<{[key: string]: string}>({});
+  
+  // Safe toFixed function to handle null/undefined values
+  const safeToFixed = (value: number | null | undefined, digits: number = 2): string => {
+    if (value === null || value === undefined) return '0.00';
+    return value.toFixed(digits);
+  };
   const { 
     isCalculating, 
     results, 
@@ -99,6 +106,16 @@ export default function PerformanceCalculator() {
 
   const validateInputs = (): boolean => {
     const validationErrors = validateRequiredFields(inputs);
+    
+    // Additional validation for TODA and LDA
+    if (operationType === 'takeoff' && (!inputs.departure.toda || inputs.departure.toda === '')) {
+      validationErrors.push({ field: 'toda', message: 'TODA is required for takeoff calculations' });
+    }
+    
+    if (operationType === 'landing' && (!inputs.departure.lda || inputs.departure.lda === '')) {
+      validationErrors.push({ field: 'lda', message: 'LDA is required for landing calculations' });
+    }
+    
     const formattedErrors = formatValidationErrors(validationErrors);
     setErrors(formattedErrors);
     return validationErrors.length === 0;
@@ -190,21 +207,30 @@ export default function PerformanceCalculator() {
         <Tabs 
           value={operationType}
           onValueChange={(value) => setOperationType(value as 'takeoff' | 'landing')}
-          className="w-full"
+          className={styles.performanceContainer}
         >
-          <div className="flex justify-center mb-6">
-            <TabsList className="grid w-[400px] grid-cols-2">
-              <TabsTrigger value="takeoff">Take Off Performance</TabsTrigger>
-              <TabsTrigger value="landing">Landing Performance</TabsTrigger>
+          <div className={styles.tabsWrapper}>
+            <TabsList className={styles.tabsList}>
+              <TabsTrigger 
+                value="takeoff" 
+                className={operationType === 'takeoff' ? styles.coloredTabTrigger : styles.inactiveTabTrigger}
+              >
+                Takeoff
+              </TabsTrigger>
+              <TabsTrigger 
+                value="landing" 
+                className={operationType === 'landing' ? styles.coloredTabTrigger : styles.inactiveTabTrigger}
+              >
+                Landing
+              </TabsTrigger>
             </TabsList>
           </div>
           
           {/* Common part selection for both tabs */}
-          <div className="flex justify-center mb-4">
+          <div className={styles.partSelection}>
             <RadioGroup
               value={inputs.part.toString()}
               onValueChange={(value) => handleInputChange('part', parseInt(value))}
-              className="flex gap-4"
             >
               <div className="flex items-center space-x-2">
                 <RadioGroupItem value="61" id="part61" />
@@ -218,11 +244,11 @@ export default function PerformanceCalculator() {
           </div>
 
           <TabsContent value="takeoff">
-            <div className="space-y-6">
+            <div className={styles.inputSection}>
               <PerformanceInputSection 
                 title="Aircraft Parameters"
                 description={
-                  <div className="flex items-center gap-2">
+                  <div className={styles.badgeContainer}>
                     <Badge variant={inputs.part === 61 ? 'default' : 'secondary'}>
                       Part {inputs.part}
                     </Badge>
@@ -279,10 +305,11 @@ export default function PerformanceCalculator() {
                   value={inputs.departure.toda}
                   onChange={(value) => handleInputChange('departure.toda', value)}
                   placeholder="Enter TODA"
-                  error={errors.runwayDistance}
+                  error={errors.toda}
                   min={0}
                   units="m"
                   tooltip="Take-off Distance Available in meters"
+                  required={true}
                 />
 
                 <div className="col-span-2">
@@ -407,7 +434,7 @@ export default function PerformanceCalculator() {
               {results && (
                 <Alert 
                   variant={results.takeoffPerformance?.isFeasible ? 'default' : 'destructive'}
-                  className="animate-in fade-in-50 duration-300"
+                  className={styles.resultAlert}
                 >
                   <div className="flex items-center gap-2">
                     {results.takeoffPerformance?.isFeasible ? (
@@ -423,113 +450,114 @@ export default function PerformanceCalculator() {
                     </AlertTitle>
                   </div>
                   <AlertDescription className="mt-2">
-                    Required distance: {results.takeoffPerformance?.finalTakeoffDistance.toFixed(2)}m
+                    Required distance: <span className={styles.importantValue}>{results.takeoffPerformance?.finalTakeoffDistance.toFixed(2)}m</span>
                     {results.takeoffPerformance?.isFeasible ? ' < ' : ' > '}
-                    Available: {results.takeoffPerformance?.toda}m
+                    Available: <span className={styles.importantValue}>{results.takeoffPerformance?.toda}m</span>
                   </AlertDescription>
                 </Alert>
               )}
 
               {results?.takeoffPerformance && (
-                <Card>
+                <Card className={styles.calculationCard}>
                   <CardHeader>
                     <CardTitle>Takeoff Performance Calculations</CardTitle>
                     <CardDescription>Step-by-step calculation breakdown</CardDescription>
                   </CardHeader>
-                  <CardContent>
-                    <div className="space-y-6">
-                      <div>
-                        <h4 className="font-medium mb-2">Pressure Altitude</h4>
-                        <p className="text-sm">
+                  <CardContent className="p-6">
+                    <div className={styles.calculationSection}>
+                      <div className="mb-6">
+                        <h4 className={styles.calculationHeading}>Pressure Altitude</h4>
+                        <p className={styles.calculationText}>
                           (1013 - {formatCalculation(inputs.qnh)}) × 30 = {formatCalculation((1013 - Number(inputs.qnh)) * 30)} ft 
                           + {formatCalculation(inputs.departure.elevation)} ft 
-                          = {results?.pressureAltitude ? formatCalculation(results.pressureAltitude.result) : 'N/A'} ft
+                          = <span className={styles.importantValue}>{results?.pressureAltitude ? formatCalculation(results.pressureAltitude.result) : 'N/A'} ft</span>
                         </p>
                       </div>
 
-                      <div>
-                        <h4 className="font-medium mb-2">Wind Components</h4>
-                        <div className="grid grid-cols-2 gap-4">
+                      <div className={styles.calculationStep}>
+                        <h4 className={styles.calculationHeading}>Wind Components</h4>
+                        <div className={styles.windComponents}>
                           <div>
                             <p className="text-sm font-medium">Part 61:</p>
-                            <p className="text-sm">HW: {results.windCalculation.part61.headwind?.toFixed(2) || '0.00'} kts</p>
-                            <p className="text-sm">TW: {results.windCalculation.part61.tailwind?.toFixed(2) || '0.00'} kts</p>
-                            <p className="text-sm">XW: {results.windCalculation.part61.crosswind.toFixed(2)} kts</p>
+                            <p className="text-sm">HW: <span className={styles.windValue}>{results.windCalculation.part61.headwind?.toFixed(2) || '0.00'} kts</span></p>
+                            <p className="text-sm">TW: <span className={styles.windValue}>{results.windCalculation.part61.tailwind?.toFixed(2) || '0.00'} kts</span></p>
+                            <p className="text-sm">XW: <span className={styles.windValue}>{results.windCalculation.part61.crosswind.toFixed(2)} kts</span></p>
                           </div>
                           <div>
                             <p className="text-sm font-medium">Part 135 (-50% HW, +150% TW):</p>
-                            <p className="text-sm">HW: {results.windCalculation.part135.headwind?.toFixed(2) || '0.00'} kts</p>
-                            <p className="text-sm">TW: {results.windCalculation.part135.tailwind?.toFixed(2) || '0.00'} kts</p>
-                            <p className="text-sm">XW: {results.windCalculation.part135.crosswind.toFixed(2)} kts</p>
+                            <p className="text-sm">HW: <span className={styles.windValue}>{results.windCalculation.part135.headwind?.toFixed(2) || '0.00'} kts</span></p>
+                            <p className="text-sm">TW: <span className={styles.windValue}>{results.windCalculation.part135.tailwind?.toFixed(2) || '0.00'} kts</span></p>
+                            <p className="text-sm">XW: <span className={styles.windValue}>{results.windCalculation.part135.crosswind.toFixed(2)} kts</span></p>
                           </div>
                         </div>
                       </div>
 
                       <Separator />
 
-                      <div>
-                        <h4 className="font-medium mb-2">Step 1: Base Distances</h4>
+                      <div className={styles.calculationStep}>
+                        <h4 className={styles.calculationHeading}>Step 1: Base Distances</h4>
                         <div className="grid grid-cols-2 gap-4">
-                          <p className="text-sm">Ground Roll (A): {results.takeoffPerformance.groundRoll.toFixed(2)}m</p>
-                          <p className="text-sm">50ft AGL Distance (B): {results.takeoffPerformance.takeoffDistance50ft.toFixed(2)}m</p>
+                          <p className="text-sm">Ground Roll (A): <span className={styles.windValue}>{results.takeoffPerformance.groundRoll.toFixed(2)}m</span></p>
+                          <p className="text-sm">50ft AGL Distance (B): <span className={styles.windValue}>{results.takeoffPerformance.takeoffDistance50ft.toFixed(2)}m</span></p>
                         </div>
                       </div>
 
-                      <div>
-                        <h4 className="font-medium mb-2">Step 2: Wind Correction</h4>
+                      <div className={styles.calculationStep}>
+                        <h4 className={styles.calculationHeading}>Step 2: Wind Correction</h4>
                         <p className="text-sm">
                           {results.windCalculation.part61.headwind 
-                            ? `${(inputs.part === 61 ? results.windCalculation.part61.headwind : results.windCalculation.part135.headwind).toFixed(2)} kts × -5m = ${(results.takeoffPerformance.windCorrectedDistance - results.takeoffPerformance.takeoffDistance50ft).toFixed(2)}m`
-                            : `${(inputs.part === 61 ? results.windCalculation.part61.tailwind : results.windCalculation.part135.tailwind).toFixed(2)} kts × +15m = ${(results.takeoffPerformance.windCorrectedDistance - results.takeoffPerformance.takeoffDistance50ft).toFixed(2)}m`
-                          } + {results.takeoffPerformance.takeoffDistance50ft.toFixed(2)}m = {results.takeoffPerformance.windCorrectedDistance.toFixed(2)}m (C)
+                            ? <><span className={styles.windValue}>{(inputs.part === 61 ? (results.windCalculation.part61.headwind || 0) : (results.windCalculation.part135.headwind || 0)).toFixed(2)} kts</span> × -5m = <span className={styles.windValue}>{(results.takeoffPerformance.windCorrectedDistance - results.takeoffPerformance.takeoffDistance50ft).toFixed(2)}m</span></>
+                            : <><span className={styles.windValue}>{(inputs.part === 61 ? (results.windCalculation.part61.tailwind || 0) : (results.windCalculation.part135.tailwind || 0)).toFixed(2)} kts</span> × +15m = <span className={styles.windValue}>{(results.takeoffPerformance.windCorrectedDistance - results.takeoffPerformance.takeoffDistance50ft).toFixed(2)}m</span></>
+                          } + <span className={styles.windValue}>{results.takeoffPerformance.takeoffDistance50ft.toFixed(2)}m</span> = <span className={styles.importantValue}>{results.takeoffPerformance.windCorrectedDistance.toFixed(2)}m (C)</span>
                         </p>
                       </div>
 
-                      <div>
-                        <h4 className="font-medium mb-2">Step 3: Surface Correction</h4>
+                      <div className={styles.calculationStep}>
+                        <h4 className={styles.calculationHeading}>Step 3: Surface Correction</h4>
                         {inputs.departure.surface === 'B' ? (
                           <p className="text-sm">
-                            {results.takeoffPerformance.groundRoll.toFixed(2)}m × -10% = 
-                            {(results.takeoffPerformance.groundRoll * -0.1).toFixed(2)}m + {results.takeoffPerformance.windCorrectedDistance.toFixed(2)}m = 
-                            {results.takeoffPerformance.surfaceCorrectedDistance.toFixed(2)}m (D)
+                            Ground Roll <span className={styles.windValue}>{results.takeoffPerformance.groundRoll.toFixed(2)}m</span> × -10% = 
+                            <span className={styles.windValue}>{(results.takeoffPerformance.groundRoll * -0.1).toFixed(2)}m</span> + <span className={styles.windValue}>{results.takeoffPerformance.windCorrectedDistance.toFixed(2)}m</span> = 
+                            <span className={styles.importantValue}>{results.takeoffPerformance.surfaceCorrectedDistance.toFixed(2)}m (D)</span>
                           </p>
                         ) : (
                           <p className="text-sm">No correction required for grass surface</p>
                         )}
                       </div>
 
-                      <div>
-                        <h4 className="font-medium mb-2">Step 4: Slope Correction</h4>
+                      <div className={styles.calculationStep}>
+                        <h4 className={styles.calculationHeading}>Step 4: Slope Correction</h4>
                         <p className="text-sm">
-                          {Number(inputs.slope.value).toFixed(2)} × {inputs.slope.direction === 'U' ? '+' : '-'}7% = 
-                          {(Number(inputs.slope.value) * 0.07).toFixed(3)}% × {results.takeoffPerformance.groundRoll.toFixed(2)}m = 
-                          {(results.takeoffPerformance.slopeCorrectedDistance - results.takeoffPerformance.surfaceCorrectedDistance).toFixed(2)}m + 
-                          {results.takeoffPerformance.surfaceCorrectedDistance.toFixed(2)}m = {results.takeoffPerformance.slopeCorrectedDistance.toFixed(2)}m
+                          Ground Roll <span className={styles.windValue}>{results.takeoffPerformance.groundRoll.toFixed(2)}m</span> × (<span className={styles.windValue}>{Number(inputs.slope.value).toFixed(2)}</span> × {inputs.slope.direction === 'U' ? '+' : '-'}7%) = 
+                          <span className={styles.windValue}>{(results.takeoffPerformance.slopeCorrectedDistance - results.takeoffPerformance.surfaceCorrectedDistance).toFixed(2)}m</span> + 
+                          <span className={styles.windValue}>{results.takeoffPerformance.surfaceCorrectedDistance.toFixed(2)}m</span> = <span className={styles.importantValue}>{results.takeoffPerformance.slopeCorrectedDistance.toFixed(2)}m</span>
                         </p>
                       </div>
 
-                      <div>
-                        <h4 className="font-medium mb-2">Step 5: Final Safety Factor</h4>
+                      <div className={styles.calculationStep}>
+                        <h4 className={styles.calculationHeading}>Step 5: Final Safety Factor</h4>
                         <p className="text-sm">
-                          {results.takeoffPerformance.slopeCorrectedDistance.toFixed(2)}m × {inputs.part === 135 ? '1.11' : '1.10'} = 
-                          {results.takeoffPerformance.finalTakeoffDistance.toFixed(2)}m TODR
+                          <span className={styles.windValue}>{results.takeoffPerformance.slopeCorrectedDistance.toFixed(2)}m</span> × {inputs.part === 135 ? '1.10' : '1.10'} = 
+                          <span className={styles.importantValue}>{results.takeoffPerformance.finalTakeoffDistance.toFixed(2)}m TODR</span>
                         </p>
                       </div>
 
                       <Separator />
 
-                      <div>
-                        <h4 className="font-medium mb-2">TODA Check</h4>
+                      <div className={styles.calculationStep}>
+                        <h4 className={styles.calculationHeading}>TODA Check</h4>
                         <p className="text-sm">
                           {Number(inputs.departure.toda) > 0 
-                            ? `${formatCalculation(inputs.departure.toda)}m ${inputs.part === 135 
-                                ? `× 0.85 = ${formatCalculation(Number(inputs.departure.toda) * 0.85)}m` 
-                                : ''}`
+                            ? <><span className={styles.importantValue}>{formatCalculation(inputs.departure.toda)}m</span> {inputs.part === 135 
+                                ? <>× 0.85 = <span className={styles.importantValue}>{formatCalculation(Number(inputs.departure.toda) * 0.85)}m</span></> 
+                                : ''}</>
                             : 'N/A'} 
-                          {results?.takeoffPerformance?.isFeasible ? ' ≥ ' : ' < '} 
+                          <span className="font-medium mx-2">{results?.takeoffPerformance?.isFeasible ? ' ≥ ' : ' < '}</span> 
+                          <span className={styles.importantValue}>
                           {results?.takeoffPerformance 
                             ? formatCalculation(results.takeoffPerformance.finalTakeoffDistance) 
                             : 'N/A'}m Required
+                          </span>
                         </p>
                       </div>
                     </div>
@@ -540,11 +568,11 @@ export default function PerformanceCalculator() {
           </TabsContent>
 
           <TabsContent value="landing">
-            <div className="space-y-6">
+            <div className={styles.inputSection}>
               <PerformanceInputSection 
                 title="Aircraft Parameters"
                 description={
-                  <div className="flex items-center gap-2">
+                  <div className={styles.badgeContainer}>
                     <Badge variant={inputs.part === 61 ? 'default' : 'secondary'}>
                       Part {inputs.part}
                     </Badge>
@@ -598,10 +626,11 @@ export default function PerformanceCalculator() {
                   value={inputs.departure.lda}
                   onChange={(value) => handleInputChange('departure.lda', value)}
                   placeholder="Enter LDA"
-                  error={errors.runwayDistance}
+                  error={errors.lda}
                   min={0}
                   units="m"
                   tooltip="Landing Distance Available in meters"
+                  required={true}
                 />
                 <div className="col-span-2">
                   <div className="grid grid-cols-2 gap-4">
@@ -721,7 +750,7 @@ export default function PerformanceCalculator() {
               {results?.landingPerformance && (
                 <Alert 
                   variant={results.landingPerformance.isFeasible ? 'default' : 'destructive'}
-                  className="animate-in fade-in-50 duration-300"
+                  className={styles.resultAlert}
                 >
                   <div className="flex items-center gap-2">
                     {results.landingPerformance.isFeasible ? (
@@ -737,52 +766,52 @@ export default function PerformanceCalculator() {
                     </AlertTitle>
                   </div>
                   <AlertDescription className="mt-2">
-                    Required distance: {results.landingPerformance.finalLandingDistance.toFixed(2)}m
+                    Required distance: <span className={styles.importantValue}>{results.landingPerformance.finalLandingDistance.toFixed(2)}m</span>
                     {' '}{results.landingPerformance.isFeasible ? '< ' : '> '}
-                    Available LDA: {results.landingPerformance.lda.toFixed(2)}m
+                    Available LDA: <span className={styles.importantValue}>{results.landingPerformance.lda.toFixed(2)}m</span>
                   </AlertDescription>
                 </Alert>
               )}
 
               {results?.landingPerformance && (
-                <Card>
+                <Card className={styles.calculationCard}>
                   <CardHeader>
                     <CardTitle>Landing Performance Calculations</CardTitle>
                     <CardDescription>Step-by-step calculation breakdown</CardDescription>
                   </CardHeader>
-                  <CardContent>
-                    <div className="space-y-6">
-                      <div>
-                        <h4 className="font-medium mb-2">Pressure Altitude</h4>
-                        <p className="text-sm">
+                  <CardContent className="p-6">
+                    <div className={styles.calculationSection}>
+                      <div className="mb-6">
+                        <h4 className={styles.calculationHeading}>Pressure Altitude</h4>
+                        <p className={styles.calculationText}>
                           (1013 - {formatCalculation(inputs.qnh)}) × 30 = {formatCalculation((1013 - Number(inputs.qnh)) * 30)} ft 
                           + {formatCalculation(inputs.departure.elevation)} ft 
-                          = {results?.pressureAltitude ? formatCalculation(results.pressureAltitude.result) : 'N/A'} ft
+                          = <span className={styles.importantValue}>{results?.pressureAltitude ? formatCalculation(results.pressureAltitude.result) : 'N/A'} ft</span>
                         </p>
                       </div>
 
-                      <div>
-                        <h4 className="font-medium mb-2">Wind Components</h4>
-                        <div className="grid grid-cols-2 gap-4">
+                      <div className={styles.calculationStep}>
+                        <h4 className={styles.calculationHeading}>Wind Components</h4>
+                        <div className={styles.windComponents}>
                           <div>
                             <p className="text-sm font-medium">Part 61:</p>
-                            <p className="text-sm">HW: {results.windCalculation.part61.headwind?.toFixed(2) || '0.00'} kts</p>
-                            <p className="text-sm">TW: {results.windCalculation.part61.tailwind?.toFixed(2) || '0.00'} kts</p>
-                            <p className="text-sm">XW: {results.windCalculation.part61.crosswind.toFixed(2)} kts</p>
+                            <p className="text-sm">HW: <span className={styles.windValue}>{results.windCalculation.part61.headwind?.toFixed(2) || '0.00'} kts</span></p>
+                            <p className="text-sm">TW: <span className={styles.windValue}>{results.windCalculation.part61.tailwind?.toFixed(2) || '0.00'} kts</span></p>
+                            <p className="text-sm">XW: <span className={styles.windValue}>{results.windCalculation.part61.crosswind.toFixed(2)} kts</span></p>
                           </div>
                           <div>
                             <p className="text-sm font-medium">Part 135 (-50% HW, +150% TW):</p>
-                            <p className="text-sm">HW: {results.windCalculation.part135.headwind?.toFixed(2) || '0.00'} kts</p>
-                            <p className="text-sm">TW: {results.windCalculation.part135.tailwind?.toFixed(2) || '0.00'} kts</p>
-                            <p className="text-sm">XW: {results.windCalculation.part135.crosswind.toFixed(2)} kts</p>
+                            <p className="text-sm">HW: <span className={styles.windValue}>{results.windCalculation.part135.headwind?.toFixed(2) || '0.00'} kts</span></p>
+                            <p className="text-sm">TW: <span className={styles.windValue}>{results.windCalculation.part135.tailwind?.toFixed(2) || '0.00'} kts</span></p>
+                            <p className="text-sm">XW: <span className={styles.windValue}>{results.windCalculation.part135.crosswind.toFixed(2)} kts</span></p>
                           </div>
                         </div>
                       </div>
 
                       <Separator />
 
-                      <div>
-                        <h4 className="font-medium mb-2">Step 1: Base Distances</h4>
+                      <div className="space-y-6">
+                        <h4 className={styles.calculationHeading}>Step 1: Base Distances</h4>
                         <div className="grid grid-cols-2 gap-4">
                           <p className="text-sm">Ground Roll (A): {results.landingPerformance.groundRoll.toFixed(2)}m</p>
                           <p className="text-sm">50ft AGL Distance (B): {results.landingPerformance.landingDistance50ft.toFixed(2)}m</p>
@@ -790,20 +819,20 @@ export default function PerformanceCalculator() {
                       </div>
 
                       <div>
-                        <h4 className="font-medium mb-2">Step 2: Wind Correction</h4>
+                        <h4 className={styles.calculationHeading}>Step 2: Wind Correction</h4>
                         <p className="text-sm">
                           {results.windCalculation.part61.headwind 
-                            ? `${(inputs.part === 61 ? results.windCalculation.part61.headwind : results.windCalculation.part135.headwind).toFixed(2)} kts × -4m = ${(results.landingPerformance.windCorrectedDistance - results.landingPerformance.landingDistance50ft).toFixed(2)}m`
-                            : `${(inputs.part === 61 ? results.windCalculation.part61.tailwind : results.windCalculation.part135.tailwind).toFixed(2)} kts × +13m = ${(results.landingPerformance.windCorrectedDistance - results.landingPerformance.landingDistance50ft).toFixed(2)}m`
+                            ? `${(inputs.part === 61 ? (results.windCalculation.part61.headwind || 0) : (results.windCalculation.part135.headwind || 0)).toFixed(2)} kts × -4m = ${(results.landingPerformance.windCorrectedDistance - results.landingPerformance.landingDistance50ft).toFixed(2)}m`
+                            : `${(inputs.part === 61 ? (results.windCalculation.part61.tailwind || 0) : (results.windCalculation.part135.tailwind || 0)).toFixed(2)} kts × +13m = ${(results.landingPerformance.windCorrectedDistance - results.landingPerformance.landingDistance50ft).toFixed(2)}m`
                           } + {results.landingPerformance.landingDistance50ft.toFixed(2)}m = {results.landingPerformance.windCorrectedDistance.toFixed(2)}m (C)
                         </p>
                       </div>
 
                       <div>
-                        <h4 className="font-medium mb-2">Step 3: Surface Correction</h4>
+                        <h4 className={styles.calculationHeading}>Step 3: Surface Correction</h4>
                         {inputs.departure.surface === 'B' ? (
                           <p className="text-sm">
-                            {results.landingPerformance.groundRoll.toFixed(2)}m × -10% = 
+                            Ground Roll {results.landingPerformance.groundRoll.toFixed(2)}m × -10% = 
                             {(results.landingPerformance.groundRoll * -0.1).toFixed(2)}m + {results.landingPerformance.windCorrectedDistance.toFixed(2)}m = 
                             {results.landingPerformance.surfaceCorrectedDistance.toFixed(2)}m (D)
                           </p>
@@ -813,37 +842,38 @@ export default function PerformanceCalculator() {
                       </div>
 
                       <div>
-                        <h4 className="font-medium mb-2">Step 4: Slope Correction</h4>
+                        <h4 className={styles.calculationHeading}>Step 4: Slope Correction</h4>
                         <p className="text-sm">
-                          {Number(inputs.slope.value).toFixed(2)} × {inputs.slope.direction === 'U' ? '+' : '-'}3% = 
-                          {(Number(inputs.slope.value) * 0.03).toFixed(3)}% × {results.landingPerformance.groundRoll.toFixed(2)}m = 
+                          Ground Roll {results.landingPerformance.groundRoll.toFixed(2)}m × ({Number(inputs.slope.value).toFixed(2)} × {inputs.slope.direction === 'U' ? '-' : '+'}3%) = 
                           {(results.landingPerformance.slopeCorrectedDistance - results.landingPerformance.surfaceCorrectedDistance).toFixed(2)}m + 
                           {results.landingPerformance.surfaceCorrectedDistance.toFixed(2)}m = {results.landingPerformance.slopeCorrectedDistance.toFixed(2)}m
                         </p>
                       </div>
 
                       <div>
-                        <h4 className="font-medium mb-2">Step 5: Final Safety Factor</h4>
+                        <h4 className={styles.calculationHeading}>Step 5: Final Safety Factor</h4>
                         <p className="text-sm">
                           {results.landingPerformance.slopeCorrectedDistance.toFixed(2)}m × 1.67 = 
-                          {results.landingPerformance.finalLandingDistance.toFixed(2)}m LDR
+                          <span className={styles.importantValue}>{results.landingPerformance.finalLandingDistance.toFixed(2)}m LDR</span>
                         </p>
                       </div>
 
                       <Separator />
 
                       <div>
-                        <h4 className="font-medium mb-2">LDA Check</h4>
+                        <h4 className={styles.calculationHeading}>LDA Check</h4>
                         <p className="text-sm">
                           {Number(inputs.departure.lda) > 0
-                            ? `${formatCalculation(inputs.departure.lda)}m ${inputs.part === 135 
-                                ? `× 0.85 = ${formatCalculation(Number(inputs.departure.lda) * 0.85)}m` 
-                                : ''}`
+                            ? <><span className={styles.importantValue}>{formatCalculation(inputs.departure.lda)}m</span> {inputs.part === 135 
+                                ? <>× 0.85 = <span className={styles.importantValue}>{formatCalculation(Number(inputs.departure.lda) * 0.85)}m</span></> 
+                                : ''}</>
                             : 'N/A'} 
-                          {results?.landingPerformance?.isFeasible ? ' ≥ ' : ' < '} 
+                          <span className="font-medium mx-2">{results?.landingPerformance?.isFeasible ? ' ≥ ' : ' < '}</span> 
+                          <span className={styles.importantValue}>
                           {results?.landingPerformance 
                             ? formatCalculation(results.landingPerformance.finalLandingDistance) 
                             : 'N/A'}m Required
+                          </span>
                         </p>
                       </div>
                     </div>
@@ -854,36 +884,34 @@ export default function PerformanceCalculator() {
           </TabsContent>
         </Tabs>
 
-        <div className="flex justify-center mt-6">
+        <div className={styles.buttonContainer}>
           <Button
             onClick={handleCalculate}
             disabled={isCalculating || Boolean(error)}
-            className="w-[200px] relative"
+            className={styles.calculateButton}
+            variant="default"
+            size="lg"
           >
             {isCalculating ? (
               <>
                 <LoadingSpinner className="mr-2 h-4 w-4" />
                 <span>Calculating...</span>
               </>
-            ) : error ? (
-              'Fix Errors to Continue'
             ) : (
-              'Calculate Performance'
+              Object.keys(errors).length > 0 ? 'Fix Errors to Continue' : 'Calculate Performance'
             )}
           </Button>
         </div>
 
         {error && (
-          <Alert variant="destructive" className="mt-4">
-            <AlertTriangle className="h-4 w-4" />
+          <Alert variant="destructive" className={styles.errorAlert}>
             <AlertTitle>Calculation Error</AlertTitle>
             <AlertDescription className="space-y-2">
               <p>{error.message || 'An unexpected error occurred'}</p>
               {lastAttemptedOperation && (
-                <Button 
-                  variant="outline" 
-                  size="sm"
+                <Button
                   onClick={retryCalculation}
+                  variant="outline"
                 >
                   Retry {lastAttemptedOperation.charAt(0).toUpperCase() + lastAttemptedOperation.slice(1)} Calculation
                 </Button>
@@ -893,13 +921,13 @@ export default function PerformanceCalculator() {
         )}
 
         {Object.keys(errors).length > 0 && (
-          <Alert variant="destructive" className="mt-4">
+          <Alert variant="destructive" className={styles.errorAlert}>
             <AlertTriangle className="h-4 w-4" />
             <AlertTitle>Validation Errors</AlertTitle>
             <AlertDescription>
-              <ul className="list-disc pl-4 space-y-1">
+              <ul className={styles.errorList}>
                 {Object.values(errors).map((message, index) => (
-                  <li key={index}>{String(message)}</li>
+                  <li key={index} className={styles.errorListItem}>{String(message)}</li>
                 ))}
               </ul>
             </AlertDescription>
@@ -909,3 +937,4 @@ export default function PerformanceCalculator() {
     </ErrorBoundary>
   );
 }
+

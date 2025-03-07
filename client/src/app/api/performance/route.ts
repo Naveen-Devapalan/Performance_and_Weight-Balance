@@ -45,7 +45,7 @@ function calculateWindComponents(inputs: PerformanceInputs) {
     },
     part135: {
       headwind: headwind > 0 ? headwind * 0.5 : null,  // 50% of headwind
-      tailwind: headwind < 0 ? -headwind * 2.5 : null, // 150% of tailwind
+      tailwind: headwind < 0 ? -headwind * 1.5 : null, // 150% of tailwind
       crosswind: Math.abs(crosswind)
     }
   };
@@ -149,16 +149,16 @@ function calculateTakeoffDistances(baseData: any, inputs: PerformanceInputs, win
       : 0;
   const windCorrectedDistance = takeoffDistance50ft + windCorrection;
 
-  // Surface correction (-10% for paved)
-  const surfaceCorrection = inputs.departure.surface === 'B' ? -0.1 : 0;
-  const surfaceCorrectedDistance = windCorrectedDistance * (1 + surfaceCorrection);
+  // Surface correction (-10% for paved, applies to ground roll only)
+  const surfaceCorrection = inputs.departure.surface === 'B' ? -0.1 * groundRoll : 0;
+  const surfaceCorrectedDistance = windCorrectedDistance + surfaceCorrection;
 
-  // Slope correction (±7% per 1% slope)
-  const slopeCorrection = Number(inputs.slope.value) * 0.07 * (inputs.slope.direction === 'U' ? 1 : -1);
-  const slopeCorrectedDistance = surfaceCorrectedDistance * (1 + slopeCorrection);
+  // Slope correction (±7% per 1% slope, applies to ground roll only)
+  const slopeCorrection = Number(inputs.slope.value) * 0.07 * (inputs.slope.direction === 'U' ? 1 : -1) * groundRoll;
+  const slopeCorrectedDistance = surfaceCorrectedDistance + slopeCorrection;
 
   // Final safety factor
-  const safetyFactor = part === 135 ? 1.11 : 1.10;
+  const safetyFactor = part === 135 ? 1.10 : 1.10;
   const finalTakeoffDistance = slopeCorrectedDistance * safetyFactor;
 
   // TODA feasibility check
@@ -194,13 +194,13 @@ function calculateLandingDistances(baseData: any, inputs: PerformanceInputs, win
       : 0;
   const windCorrectedDistance = landingDistance50ft + windCorrection;
 
-  // Surface correction (-10% for paved)
-  const surfaceCorrection = inputs.departure.surface === 'B' ? -0.1 : 0;
-  const surfaceCorrectedDistance = windCorrectedDistance * (1 + surfaceCorrection);
+  // Surface correction (-10% for paved, applies to ground roll only)
+  const surfaceCorrection = inputs.departure.surface === 'B' ? -0.1 * groundRoll : 0;
+  const surfaceCorrectedDistance = windCorrectedDistance + surfaceCorrection;
 
-  // Slope correction (±3% per 1% slope)
-  const slopeCorrection = Number(inputs.slope.value) * 0.03 * (inputs.slope.direction === 'U' ? -1 : 1);
-  const slopeCorrectedDistance = surfaceCorrectedDistance * (1 + slopeCorrection);
+  // Slope correction (±3% per 1% slope, applies to ground roll only)
+  const slopeCorrection = Number(inputs.slope.value) * 0.03 * (inputs.slope.direction === 'U' ? -1 : 1) * groundRoll;
+  const slopeCorrectedDistance = surfaceCorrectedDistance + slopeCorrection;
 
   // Final safety factor (1.67 for landing)
   const finalLandingDistance = slopeCorrectedDistance * 1.67;
@@ -274,3 +274,14 @@ export async function POST(request: Request) {
     }
   }
 }
+
+
+
+
+
+
+
+
+
+
+
