@@ -1,0 +1,77 @@
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.table th,
+.table td {
+  padding: 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.table th {
+  background-color: #f8fafc;
+  font-weight: 600;
+}
+
+.input {
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.375rem;
+}
+
+.calculated {
+  color: #4a5568;
+  font-weight: 500;
+}
+
+.warning {
+  color: #e53e3e;
+  font-weight: 500;
+}
+
+.success {
+  color: #38a169;
+  font-weight: 500;
+}
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.table th,
+.table td {
+  padding: 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.table th {
+  background-color: #f8fafc;
+  font-weight: 600;
+}
+
+.input {
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.375rem;
+}
+
+.calculated {
+  color: #4a5568;
+  font-weight: 500;
+}
+
+.warning {
+  color: #e53e3e;
+  font-weight: 500;
+}
+
+.success {
+  color: #38a169;
+  font-weight: 500;
+}

@@ -17,6 +17,8 @@ export interface WeightBalanceInputs {
   };
 }
 
+export type ScenarioType = 'standard' | 'maxFuel' | 'minFuel' | 'fixedBaggage' | 'performanceLimited';
+
 export interface WeightBalanceOutput {
   minimumFuelRequired: {
     time: number;
@@ -56,37 +58,43 @@ export interface WeightBalanceOutput {
   };
 }
 
-const CONVERSION_FACTORS = {
+export const CONVERSION_FACTORS = {
   LITRES_TO_KG: 0.72,
   FLIGHT_TIME_TO_FUEL_RATE: 18, // L/hr
 };
 
-const DEFAULT_ARMS = {
+export const DEFAULT_ARMS = {
   emptyWeight: 1.86,
   pilotPassenger: 1.800,
   fuel: 2.209,
   baggage: 2.417,
 };
 
-const CG_LIMITS = {
+export const CG_LIMITS = {
   FORWARD: 1.841,
   AFT: 1.978,
   MAX_TAKEOFF_WEIGHT: 650, // kg
   MAX_BAGGAGE_WEIGHT: 20,  // kg
 };
 
-const TAXI_FUEL_LITRES = 3; // Constant value for taxi fuel in litres
-const TAXI_FUEL_WEIGHT = Number((TAXI_FUEL_LITRES * CONVERSION_FACTORS.LITRES_TO_KG).toFixed(2)); // Constant value for taxi fuel in kg
+// As per TDD section 2.4
+export const TAXI_FUEL_LITRES = 3; // Constant value for taxi fuel in litres
+export const TAXI_FUEL_WEIGHT = Number((TAXI_FUEL_LITRES * CONVERSION_FACTORS.LITRES_TO_KG).toFixed(2)); // Constant value for taxi fuel in kg
 
 export function calculateMinimumFuel(inputs: WeightBalanceInputs): number {
   const { flightTime } = inputs;
   
+  // Per TDD 2.4: Trip + 10% Contingency + Alternate + Other + Reserve + Taxi
   const tripFuel = flightTime.trip * CONVERSION_FACTORS.FLIGHT_TIME_TO_FUEL_RATE;
+  
+  // Contingency should be 10% of trip fuel, not just use the contingency time directly
+  // This aligns with the TDD which specifies contingency as 10% of trip fuel
   const contingencyFuel = tripFuel * 0.1;
+  
   const alternateFuel = flightTime.alternate * CONVERSION_FACTORS.FLIGHT_TIME_TO_FUEL_RATE;
   const otherFuel = flightTime.other * CONVERSION_FACTORS.FLIGHT_TIME_TO_FUEL_RATE;
   const reserveFuel = flightTime.reserve * CONVERSION_FACTORS.FLIGHT_TIME_TO_FUEL_RATE;
-  const taxiFuel = flightTime.taxi * CONVERSION_FACTORS.FLIGHT_TIME_TO_FUEL_RATE;
+  const taxiFuel = TAXI_FUEL_LITRES;  // Use constant value as per TDD section 2.4
 
   return Number((tripFuel + contingencyFuel + alternateFuel + otherFuel + reserveFuel + taxiFuel).toFixed(2));
 }
@@ -229,4 +237,93 @@ export function convertLitresToKG(litres: number): number {
 
 export function convertImperialGallonToKG(gallons: number): number {
   return Number((gallons * 3.27).toFixed(2));
+}
+
+/**
+ * Apply scenario toggles as per TDD section 2.3
+ */
+export function applyScenario(
+  inputs: WeightBalanceInputs, 
+  scenario: ScenarioType
+): WeightBalanceInputs {
+  const updatedInputs = {...inputs};
+  
+  switch (scenario) {
+    case 'maxFuel':
+      // Calculate maximum possible fuel without exceeding TOW
+      const maxPayloadWeight = inputs.pilotWeight + inputs.passengerWeight;
+      const maxAvailableWeight = CG_LIMITS.MAX_TAKEOFF_WEIGHT - inputs.emptyWeight - maxPayloadWeight;
+      
+      // Set baggage to 0 or minimal and maximize fuel
+      updatedInputs.baggageWeight = 0;
+      updatedInputs.fuelMass = Math.min(maxAvailableWeight, 120); // Assume max tank capacity is 120kg
+      break;
+      
+    case 'minFuel':
+      // Calculate minimal flight fuel (trip + mandatory reserves)
+      const minFuelLitres = 
+        (inputs.flightTime.trip + inputs.flightTime.reserve) * 
+        CONVERSION_FACTORS.FLIGHT_TIME_TO_FUEL_RATE;
+      const minFuelWeight = Number((minFuelLitres * CONVERSION_FACTORS.LITRES_TO_KG).toFixed(2));
+      
+      // Maximum available weight for baggage
+      const maxBaggageWeight = Math.min(
+        CG_LIMITS.MAX_BAGGAGE_WEIGHT,
+        CG_LIMITS.MAX_TAKEOFF_WEIGHT - inputs.emptyWeight - inputs.pilotWeight - inputs.passengerWeight - minFuelWeight
+      );
+      
+      updatedInputs.fuelMass = minFuelWeight;
+      updatedInputs.baggageWeight = maxBaggageWeight;
+      break;
+      
+    case 'fixedBaggage':
+      // Keep baggage fixed, adjust fuel to not exceed TOW
+      const maxFuelWithFixedBaggage = 
+        CG_LIMITS.MAX_TAKEOFF_WEIGHT - 
+        inputs.emptyWeight - 
+        inputs.pilotWeight - 
+        inputs.passengerWeight - 
+        inputs.baggageWeight;
+      
+      updatedInputs.fuelMass = Math.max(0, maxFuelWithFixedBaggage);
+      break;
+      
+    case 'performanceLimited':
+      // Per TDD section 2.3.4: Performance-Limited scenario
+      // Reduce TOW to 95% of maximum for performance considerations
+      const reducedMaxTOW = CG_LIMITS.MAX_TAKEOFF_WEIGHT * 0.95;
+      const currentTOW = 
+        inputs.emptyWeight + 
+        inputs.pilotWeight + 
+        inputs.passengerWeight + 
+        inputs.baggageWeight + 
+        inputs.fuelMass;
+      
+      if (currentTOW > reducedMaxTOW) {
+        // Reduce fuel to meet the performance-limited TOW
+        const excessWeight = currentTOW - reducedMaxTOW;
+        // Make sure we can't have negative fuel
+        updatedInputs.fuelMass = Math.max(0, inputs.fuelMass - excessWeight);
+        
+        // If even with zero fuel we're still over the limit, reduce baggage next
+        const updatedTOW = 
+          inputs.emptyWeight + 
+          inputs.pilotWeight + 
+          inputs.passengerWeight + 
+          updatedInputs.baggageWeight + 
+          updatedInputs.fuelMass;
+          
+        if (updatedTOW > reducedMaxTOW && updatedInputs.fuelMass === 0) {
+          const remainingExcess = updatedTOW - reducedMaxTOW;
+          updatedInputs.baggageWeight = Math.max(0, inputs.baggageWeight - remainingExcess);
+        }
+      }
+      break;
+      
+    default:
+      // No changes for standard scenario
+      break;
+  }
+  
+  return updatedInputs;
 }

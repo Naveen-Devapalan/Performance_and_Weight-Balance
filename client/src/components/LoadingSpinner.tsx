@@ -1,16 +1,22 @@
 import React from 'react';
 
-interface SpinnerProps {
+interface LoadingSpinnerProps {
+  size?: number;
   className?: string;
 }
 
-export default function LoadingSpinner({ className = '' }: SpinnerProps) {
+const LoadingSpinner: React.FC<LoadingSpinnerProps> = ({ 
+  size = 24, 
+  className = ''
+}) => {
   return (
     <svg
       className={`animate-spin ${className}`}
-      xmlns="http://www.w3.org/2000/svg"
-      fill="none"
+      width={size}
+      height={size}
       viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
     >
       <circle
         className="opacity-25"
@@ -18,7 +24,7 @@ export default function LoadingSpinner({ className = '' }: SpinnerProps) {
         cy="12"
         r="10"
         stroke="currentColor"
-        strokeWidth="3"
+        strokeWidth="4"
       />
       <path
         className="opacity-75"
@@ -27,4 +33,6 @@ export default function LoadingSpinner({ className = '' }: SpinnerProps) {
       />
     </svg>
   );
-}
+};
+
+export default LoadingSpinner;

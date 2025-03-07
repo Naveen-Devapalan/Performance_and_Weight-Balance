@@ -1,8 +1,4 @@
 # W&B CALCULATOR (PART 135) – TECNAM P2008JC
-
-**Student:** _____________ &nbsp;&nbsp; **Instructor:** _____________ &nbsp;&nbsp;  **Date:** _______________ &nbsp;&nbsp;&nbsp;&nbsp; **Registration: ZK-____**
-
-
 ---
 
 ## SECTION 1: MINIMUM FUEL REQUIRED
