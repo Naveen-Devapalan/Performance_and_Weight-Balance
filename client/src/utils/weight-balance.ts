@@ -1,11 +1,12 @@
 // Weight & Balance Utility Functions
+
 export interface WeightBalanceInputs {
   emptyWeight: number;
   emptyArm?: number;
   emptyMoment?: number;
   pilotWeight: number;
   passengerWeight: number;
-  fuelMass: number;
+  fuelMass: number; // For standard scenario, fuelMass represents the actual flight fuel (i.e. actual dip - taxi fuel)
   baggageWeight: number;
   flightTime: {
     trip: number;
@@ -81,49 +82,74 @@ export const CG_LIMITS = {
 
 // As per TDD section 2.4
 export const TAXI_FUEL_LITRES = 3; // Constant value for taxi fuel in litres
-export const TAXI_FUEL_WEIGHT = Number((TAXI_FUEL_LITRES * CONVERSION_FACTORS.LITRES_TO_KG).toFixed(2)); // Constant value for taxi fuel in kg
+export const TAXI_FUEL_WEIGHT = Number((TAXI_FUEL_LITRES * CONVERSION_FACTORS.LITRES_TO_KG).toFixed(2)); // Constant taxi fuel weight (kg)
 
+/**
+ * Calculate the minimum fuel required (in litres) based on flight time.
+ * This value represents the fuel dip, i.e. the total fuel needed including taxi fuel.
+ */
 export function calculateMinimumFuel(inputs: WeightBalanceInputs): number {
   const { flightTime } = inputs;
   
   // Per TDD 2.4: Trip + 10% Contingency + Alternate + Other + Reserve + Taxi
   const tripFuel = flightTime.trip * CONVERSION_FACTORS.FLIGHT_TIME_TO_FUEL_RATE;
-  
-  // Contingency is 10% of trip fuel
-  const contingencyFuel = tripFuel * 0.1;
-  
+  const contingencyFuel = tripFuel * 0.1; // 10% of trip fuel
   const alternateFuel = flightTime.alternate * CONVERSION_FACTORS.FLIGHT_TIME_TO_FUEL_RATE;
   const otherFuel = flightTime.other * CONVERSION_FACTORS.FLIGHT_TIME_TO_FUEL_RATE;
   const reserveFuel = flightTime.reserve * CONVERSION_FACTORS.FLIGHT_TIME_TO_FUEL_RATE;
-  // Use the taxi fuel value provided by the user (default is 3L)
-  const taxiFuel = flightTime.taxi;
+  const taxiFuel = flightTime.taxi; // in litres
   
   return Number((tripFuel + contingencyFuel + alternateFuel + otherFuel + reserveFuel + taxiFuel).toFixed(2));
 }
 
+/**
+ * Calculates the overall weight and balance.
+ *
+ * IMPORTANT: This function now distinguishes between:
+ *  - The actual dip (minimum fuel required, including taxi fuel)
+ *  - The actual flight fuel (fuel available for flight, i.e. actual dip minus taxi fuel)
+ *
+ * For the standard scenario, if inputs.fuelMass is zero, we assume the actual flight fuel = (minimum fuel weight - taxi fuel weight).
+ * For other scenarios, applyScenario should have computed fuelMass to be the actual flight fuel.
+ */
 export function calculateWeightAndBalance(inputs: WeightBalanceInputs): WeightBalanceOutput {
-  // Removed the dedicated maxFuel branch.
-  // For maxFuel, the fuelMass is computed in handleCalculate and passed via inputs.
   const { 
     emptyWeight, 
     emptyArm = DEFAULT_ARMS.emptyWeight,
     emptyMoment,
     pilotWeight, 
     passengerWeight, 
-    fuelMass, 
+    fuelMass, // represents actual flight fuel weight if set
     baggageWeight,
     flightTime 
   } = inputs;
 
-  // Fuel calculations
-  const minimumFuelLitres = calculateMinimumFuel(inputs);
+  // Compute minimum fuel required (actual dip) from flightTime.
+  const minimumFuelLitres = calculateMinimumFuel(inputs); // This includes taxi fuel.
   const minimumFuelWeight = Number((minimumFuelLitres * CONVERSION_FACTORS.LITRES_TO_KG).toFixed(2));
-  const burnOffWeight = Number((flightTime.trip * CONVERSION_FACTORS.FLIGHT_TIME_TO_FUEL_RATE * CONVERSION_FACTORS.LITRES_TO_KG).toFixed(2));
 
-  // Calculate empty moment if not provided
+  // Taxi fuel (from flightTime input)
+  const taxiFuelLitres = flightTime.taxi;
+  const taxiFuelWeight = Number((taxiFuelLitres * CONVERSION_FACTORS.LITRES_TO_KG).toFixed(2));
+
+  // Determine the actual flight fuel:
+  // If fuelMass is provided (non-zero) by a scenario (e.g. minFuel or maxFuel),
+  // use it; otherwise (standard scenario) compute it as (minimum fuel - taxi fuel).
+  const actualFlightFuelWeight = fuelMass > 0 ? fuelMass : Number((minimumFuelWeight - taxiFuelWeight).toFixed(2));
+  const actualFlightFuelLitres = Number((actualFlightFuelWeight / CONVERSION_FACTORS.LITRES_TO_KG).toFixed(2));
+
+  // The actual dip is always the minimum fuel (includes taxi fuel).
+  const actualDipWeight = minimumFuelWeight;
+  const actualDipLitres = minimumFuelLitres;
+
+  // Burn off weight is computed based on trip fuel only.
+  const burnOffWeight = Number((flightTime.trip * CONVERSION_FACTORS.FLIGHT_TIME_TO_FUEL_RATE * CONVERSION_FACTORS.LITRES_TO_KG).toFixed(2));
+  const burnOffLitres = Number((burnOffWeight / CONVERSION_FACTORS.LITRES_TO_KG).toFixed(2));
+
+  // Calculate empty moment if not provided.
   const calculatedEmptyMoment = emptyMoment || Number((emptyWeight * emptyArm).toFixed(2));
 
-  // Weight and Balance Calculations for all scenarios
+  // Weight and Balance items.
   const weightBalanceItems = [
     { 
       name: 'Empty Weight', 
@@ -139,10 +165,9 @@ export function calculateWeightAndBalance(inputs: WeightBalanceInputs): WeightBa
     },
     { 
       name: 'Fuel Mass', 
-      weight: fuelMass, 
+      weight: actualFlightFuelWeight, 
       arm: DEFAULT_ARMS.fuel, 
-      moment: Number((fuelMass * DEFAULT_ARMS.fuel).toFixed(2)),
-      max: undefined 
+      moment: Number((actualFlightFuelWeight * DEFAULT_ARMS.fuel).toFixed(2))
     },
     { 
       name: 'Baggage', 
@@ -157,7 +182,7 @@ export function calculateWeightAndBalance(inputs: WeightBalanceInputs): WeightBa
     emptyWeight + 
     pilotWeight + 
     passengerWeight + 
-    fuelMass + 
+    actualFlightFuelWeight + 
     baggageWeight
   ).toFixed(2));
 
@@ -170,24 +195,24 @@ export function calculateWeightAndBalance(inputs: WeightBalanceInputs): WeightBa
   return {
     minimumFuelRequired: {
       time: flightTime.trip + flightTime.contingency + flightTime.alternate + flightTime.other + flightTime.reserve,
-      litres: Number((fuelMass / CONVERSION_FACTORS.LITRES_TO_KG).toFixed(2)),  // Convert from actual flight fuel
-      weight: fuelMass  // Use actual flight fuel weight
+      litres: actualDipLitres,
+      weight: actualDipWeight
     },
     actualFuelState: {
       actualDip: {
-        litres: Number((fuelMass / CONVERSION_FACTORS.LITRES_TO_KG).toFixed(2)),
-        weight: fuelMass
+        litres: actualDipLitres,
+        weight: actualDipWeight
       },
       taxi: {
-        litres: flightTime.taxi,
-        weight: Number((flightTime.taxi * CONVERSION_FACTORS.LITRES_TO_KG).toFixed(2))
+        litres: taxiFuelLitres,
+        weight: taxiFuelWeight
       },
       actualFlightFuel: {
-        litres: Number((fuelMass / CONVERSION_FACTORS.LITRES_TO_KG).toFixed(2)),
-        weight: fuelMass
+        litres: actualFlightFuelLitres,
+        weight: actualFlightFuelWeight
       },
       burnOff: {
-        litres: burnOffWeight / CONVERSION_FACTORS.LITRES_TO_KG,
+        litres: burnOffLitres,
         weight: burnOffWeight
       }
     },
@@ -244,23 +269,28 @@ export function convertImperialGallonToKG(gallons: number): number {
 }
 
 /**
- * Apply scenario toggles as per TDD section 2.3
- * Now simplified to always return the unchanged inputs.
+ * Apply scenario toggles as per TDD section 2.3.
+ *
+ * For the 'minFuel' scenario, we compute:
+ *   - The minimum fuel required (dip)
+ *   - The actual flight fuel as (dip - taxi fuel weight)
+ *   - Adjust baggage weight accordingly.
+ *
+ * For other scenarios, similar logic can be applied.
  */
 export function applyScenario(
   inputs: WeightBalanceInputs, 
   scenario: ScenarioType
 ): WeightBalanceInputs {
-  const updatedInputs = {...inputs};
+  const updatedInputs = { ...inputs };
   
   switch (scenario) {
-    case 'minFuel':
-      // Calculate minimum fuel requirements
+    case 'minFuel': {
       const minFuelLitres = calculateMinimumFuel(updatedInputs);
       const minFuelWeight = Number((minFuelLitres * CONVERSION_FACTORS.LITRES_TO_KG).toFixed(2));
+      // actual flight fuel is dip minus constant taxi fuel weight
       const actualFlightFuel = Number((minFuelWeight - TAXI_FUEL_WEIGHT).toFixed(2));
 
-      // Calculate weights without baggage
       const baseWeight = Number((
         updatedInputs.emptyWeight +
         updatedInputs.pilotWeight +
@@ -268,16 +298,13 @@ export function applyScenario(
         actualFlightFuel
       ).toFixed(2));
 
-      // Calculate remaining weight for baggage with precision handling
       const remainingWeight = Number((CG_LIMITS.MAX_TAKEOFF_WEIGHT - baseWeight).toFixed(2));
       
-      // Calculate max allowable baggage
       const maxBaggage = Math.min(
         CG_LIMITS.MAX_BAGGAGE_WEIGHT,
         Math.max(0, remainingWeight)
       );
 
-      // Final check to ensure we don't exceed MAX_TAKEOFF_WEIGHT
       const totalWeight = Number((baseWeight + maxBaggage).toFixed(2));
       const adjustedBaggage = totalWeight > CG_LIMITS.MAX_TAKEOFF_WEIGHT 
         ? Number((maxBaggage - (totalWeight - CG_LIMITS.MAX_TAKEOFF_WEIGHT)).toFixed(2))
@@ -289,17 +316,18 @@ export function applyScenario(
         baggageWeight: adjustedBaggage,
         fuelMass: actualFlightFuel
       };
+    }
     
     case 'maxFuel':
-      // Similar logic for maxFuel...
+      // Similar logic for maxFuel can be added here.
       return updatedInputs;
     
     case 'fixedBaggage':
-      // Similar logic for fixedBaggage...
+      // Similar logic for fixedBaggage can be added here.
       return updatedInputs;
     
     default:
-      // For 'standard' scenario
+      // For the 'standard' scenario, we leave baggageWeight and fuelMass unchanged.
       return {
         ...updatedInputs,
         scenario: scenario,

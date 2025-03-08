@@ -18,7 +18,7 @@ import {
   calculateMinimumFuel,
   CG_LIMITS,
   applyScenario,
-  ScenarioType  // Import ScenarioType from utils
+  ScenarioType  
 } from '@/utils/weight-balance';
 import { 
   Select,
@@ -27,19 +27,19 @@ import {
   SelectTrigger,
   SelectValue 
 } from "@/components/ui/select";
-
 import { validateWeightBalanceInputs } from '@/utils/validation';
 import styles from './styles.module.css';
 import LoadingSpinner from '@/components/LoadingSpinner';
 
 export default function WeightAndBalancePage() {
+  // Consolidate scenario into inputs state
   const [inputs, setInputs] = useState<WeightBalanceInputs>({
     emptyWeight: 432.21,
     emptyArm: 1.86,
     pilotWeight: 75,
     passengerWeight: 80,
-    fuelMass: 0,
-    baggageWeight: 3,  // Changed from 20 to a reasonable default for standard scenario
+    fuelMass: 0, // will be set based on calculations (actual flight fuel)
+    baggageWeight: 3, // default for standard scenario
     flightTime: {
       trip: 2.0,
       contingency: 0.42,
@@ -51,108 +51,104 @@ export default function WeightAndBalancePage() {
     scenario: 'standard' as ScenarioType
   });
 
-  const [scenario, setScenario] = useState<ScenarioType>('standard');
   const [results, setResults] = useState<WeightBalanceOutput | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [maxAllowableBaggage, setMaxAllowableBaggage] = useState<number | null>(null);
 
+  // --- Helper Functions for Fuel Calculations ---
+  // Returns an object with both the flight fuel mass (fuel that will be used during flight)
+  // and the actual dip (the fuel quantity as measured, i.e. minimum fuel required).
+  function computeStandardFuel(inputs: WeightBalanceInputs): { flightFuelMass: number, actualDip: number } {
+    const actualDipLitres = calculateMinimumFuel(inputs);
+    const actualDip = Number((actualDipLitres * CONVERSION_FACTORS.LITRES_TO_KG).toFixed(2));
+    // In standard scenario, actual flight fuel equals the dip minus taxi fuel
+    const flightFuelMass = Number(((actualDipLitres - inputs.flightTime.taxi) * CONVERSION_FACTORS.LITRES_TO_KG).toFixed(2));
+    return { flightFuelMass, actualDip };
+  }
+
+  function computeMaxFuel(inputs: WeightBalanceInputs): { flightFuelMass: number, actualDip: number } {
+    const { emptyWeight, pilotWeight, passengerWeight, baggageWeight } = inputs;
+    const totalStatic = emptyWeight + pilotWeight + passengerWeight + baggageWeight;
+    const remaining = CG_LIMITS.MAX_TAKEOFF_WEIGHT - totalStatic;
+    if (remaining <= 0) {
+      throw new Error("Operation not feasible: total weight exceeds maximum takeoff weight.");
+    }
+    const maxPossibleFuelLitres = remaining / CONVERSION_FACTORS.LITRES_TO_KG;
+    const minFuelLitres = calculateMinimumFuel(inputs);
+    if (maxPossibleFuelLitres < minFuelLitres) {
+      throw new Error(
+        `Operation not feasible: Maximum possible fuel (${maxPossibleFuelLitres.toFixed(1)}L) is less than minimum required fuel (${minFuelLitres.toFixed(1)}L). Consider reducing payload or recalculating flight times.`
+      );
+    }
+    const absoluteMaxFuel = 120; // Maximum tank capacity in litres
+    const fuelLitres = Math.min(absoluteMaxFuel, maxPossibleFuelLitres);
+    // In maxFuel scenario, the computed fuel is the flight fuel available.
+    const flightFuelMass = Number((fuelLitres * CONVERSION_FACTORS.LITRES_TO_KG).toFixed(2));
+    // The actual dip (fuel measured on the dipstick) is flight fuel plus taxi fuel weight.
+    const taxiFuelWeight = Number((inputs.flightTime.taxi * CONVERSION_FACTORS.LITRES_TO_KG).toFixed(2));
+    const actualDip = flightFuelMass + taxiFuelWeight;
+    return { flightFuelMass, actualDip };
+  }
+
+  function computeMinFuel(inputs: WeightBalanceInputs): { flightFuelMass: number, actualDip: number } {
+    const minFuelLitres = calculateMinimumFuel(inputs);
+    const actualDip = Number((minFuelLitres * CONVERSION_FACTORS.LITRES_TO_KG).toFixed(2));
+    // In minFuel scenario, actual flight fuel is the dip minus a constant taxi fuel weight.
+    const taxiFuelWeight = TAXI_FUEL_LITRES * CONVERSION_FACTORS.LITRES_TO_KG;
+    const flightFuelMass = Number((actualDip - taxiFuelWeight).toFixed(2));
+    return { flightFuelMass, actualDip };
+  }
+
+  // --- Handlers for Input Updates ---
   const handleInputChange = (field: keyof WeightBalanceInputs, value: number) => {
     setInputs(prev => {
-      // First update the field
       const updatedInputs = { ...prev, [field]: value };
-      
-      // If we're in a special scenario, reapply the scenario logic
-      if (prev.scenario !== 'standard') {
-        return applyScenario(updatedInputs, prev.scenario);
-      }
-      
-      return updatedInputs;
+      // Reapply scenario logic if not in standard
+      return prev.scenario !== 'standard'
+        ? applyScenario(updatedInputs, prev.scenario)
+        : updatedInputs;
     });
   };
 
   const handleFlightTimeChange = (field: keyof WeightBalanceInputs['flightTime'], value: number) => {
     setInputs(prev => {
-      // Update flight time first
       let updatedFlightTime = { ...prev.flightTime, [field]: value };
-      
-      // Auto-calculate contingency as 10% of trip fuel when trip time changes
+      // Auto-calculate contingency as 10% of trip time when trip changes
       if (field === 'trip') {
         updatedFlightTime.contingency = Number((value * 0.1).toFixed(2));
       }
-
       let updatedInputs = { ...prev, flightTime: updatedFlightTime };
-
-      // If we're in a special scenario, reapply the scenario logic
-      if (prev.scenario !== 'standard') {
-        return applyScenario(updatedInputs, prev.scenario);
-      }
-
-      return updatedInputs;
+      return prev.scenario !== 'standard'
+        ? applyScenario(updatedInputs, prev.scenario)
+        : updatedInputs;
     });
   };
 
   const handleScenarioChange = (newScenario: ScenarioType) => {
-    setScenario(newScenario);
-    setInputs(prev => {
-      // Simply apply the new scenario to current inputs
-      return applyScenario(prev, newScenario);
-    });
+    setInputs(prev => applyScenario({ ...prev, scenario: newScenario }, newScenario));
   };
 
+  // --- Calculation Handler ---
   const handleCalculate = async () => {
     setLoading(true);
     setError(null);
-    
+
     try {
-      let finalInputs = { ...inputs };
-      
-      // Calculate minimum required fuel first
-      const minFuelRequired = calculateMinimumFuel(inputs);
-      
+      let computedFuel: { flightFuelMass: number, actualDip: number };
+
       if (inputs.scenario === 'maxFuel') {
-        const { emptyWeight, pilotWeight, passengerWeight, baggageWeight } = inputs;
-        const totalStatic = emptyWeight + pilotWeight + passengerWeight + baggageWeight;
-        const remaining = CG_LIMITS.MAX_TAKEOFF_WEIGHT - totalStatic;
-        
-        // Convert remaining weight to liters (using reverse conversion factor)
-        const maxPossibleFuelLitres = remaining / CONVERSION_FACTORS.LITRES_TO_KG;
-        
-        if (remaining <= 0) {
-          setError("Operation not feasible: total weight exceeds maximum takeoff weight.");
-          setLoading(false);
-          return;
-        }
-        
-        // Check if maximum possible fuel meets minimum required
-        if (maxPossibleFuelLitres < minFuelRequired) {
-          setError(
-            `Operation not feasible: Maximum possible fuel (${maxPossibleFuelLitres.toFixed(1)}L) ` +
-            `is less than minimum required fuel (${minFuelRequired.toFixed(1)}L). ` +
-            `Consider reducing payload or recalculating flight times.`
-          );
-          setLoading(false);
-          return;
-        }
-        
-        const absoluteMaxFuel = 120; // Maximum tank capacity in liters
-        const fuelLitres = Math.min(absoluteMaxFuel, maxPossibleFuelLitres);
-        const fuelMass = fuelLitres * CONVERSION_FACTORS.LITRES_TO_KG;
-        finalInputs = { ...inputs, fuelMass };
+        computedFuel = computeMaxFuel(inputs);
       } else if (inputs.scenario === 'minFuel') {
-        // Calculate actual flight fuel for minFuel scenario
-        const minFuelLitres = calculateMinimumFuel(inputs);
-        const minFuelWeight = Number((minFuelLitres * CONVERSION_FACTORS.LITRES_TO_KG).toFixed(2));
-        const actualFlightFuel = Number((minFuelWeight - TAXI_FUEL_LITRES * CONVERSION_FACTORS.LITRES_TO_KG).toFixed(2));
-        finalInputs = { ...inputs, fuelMass: actualFlightFuel };
+        computedFuel = computeMinFuel(inputs);
       } else {
-        // Standard scenario: auto-calculate fuel mass from flight time.
-        const minFuelLitres = calculateMinimumFuel(inputs);
-        const computedFuelMass = Number(((minFuelLitres - inputs.flightTime.taxi) * CONVERSION_FACTORS.LITRES_TO_KG).toFixed(2));
-        finalInputs = { ...inputs, fuelMass: computedFuelMass };
+        computedFuel = computeStandardFuel(inputs);
       }
 
-      // Run weight and balance validations.
+      // Pass both the actual flight fuel (fuelMass) and the actual dip to the API.
+      const finalInputs = { ...inputs, fuelMass: computedFuel.flightFuelMass, actualDip: computedFuel.actualDip };
+
+      // Run validations
       const validationErrors = validateWeightBalanceInputs(finalInputs);
       if (validationErrors.length > 0) {
         setError(validationErrors.map(err => err.message).join(', '));
@@ -160,6 +156,7 @@ export default function WeightAndBalancePage() {
         return;
       }
 
+      // API call for further processing
       const response = await fetch('/api/weight-balance', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -172,7 +169,6 @@ export default function WeightAndBalancePage() {
       }
 
       const data = await response.json();
-
       setResults(data);
     } catch (error) {
       console.error('Error:', error);
@@ -182,6 +178,7 @@ export default function WeightAndBalancePage() {
     }
   };
 
+  // --- Render UI ---
   return (
     <WeightBalanceLayout>
       <div className="space-y-6">
@@ -245,17 +242,17 @@ export default function WeightAndBalancePage() {
               <div className="space-y-2">
                 <Label htmlFor="baggageWeight">
                   Baggage Weight (kg)
-                  {scenario === 'minFuel' && ' (Auto-calculated)'}
+                  {inputs.scenario === 'minFuel' && ' (Auto-calculated)'}
                 </Label>
                 <Input
                   id="baggageWeight"
                   type="number"
-                  value={inputs.baggageWeight}  // Use the value from inputs state
+                  value={inputs.baggageWeight}
                   onChange={(e) => handleInputChange('baggageWeight', parseFloat(e.target.value))}
-                  disabled={scenario === 'minFuel'}
-                  className={scenario === 'minFuel' ? 'bg-gray-100' : ''}
+                  disabled={inputs.scenario === 'minFuel'}
+                  className={inputs.scenario === 'minFuel' ? 'bg-gray-100' : ''}
                 />
-                {scenario === 'minFuel' && maxAllowableBaggage !== null && (
+                {inputs.scenario === 'minFuel' && maxAllowableBaggage !== null && (
                   <p className="text-sm text-muted-foreground mt-1">
                     Maximum allowable baggage: {maxAllowableBaggage.toFixed(1)} kg
                     {maxAllowableBaggage === CG_LIMITS.MAX_BAGGAGE_WEIGHT && (
@@ -282,7 +279,7 @@ export default function WeightAndBalancePage() {
               <div>
                 <Label htmlFor="scenario">Select Scenario</Label>
                 <Select
-                  value={scenario}
+                  value={inputs.scenario}
                   onValueChange={handleScenarioChange}
                 >
                   <SelectTrigger className="w-full">
@@ -349,7 +346,6 @@ export default function WeightAndBalancePage() {
                 />
               </div>
               <div>
-                {/* Updated label to reflect taxi fuel in liters */}
                 <Label htmlFor="taxiTime">Taxi Fuel (L)</Label>
                 <Input 
                   id="taxiTime" 
@@ -417,14 +413,12 @@ export default function WeightAndBalancePage() {
         {results && (
           <div className="space-y-6">
             <h2 className="text-xl font-semibold">Calculation Results</h2>
-            
             <Tabs defaultValue="weights">
               <TabsList className="grid grid-cols-3 mb-4">
                 <TabsTrigger value="fuel">Fuel Calculations</TabsTrigger>
                 <TabsTrigger value="weights">Weight & Balance</TabsTrigger>
                 <TabsTrigger value="cg">CG Analysis</TabsTrigger>
               </TabsList>
-              
               <TabsContent value="fuel">
                 <Card className="p-4">
                   <h3 className="font-semibold mb-3">Minimum Fuel Required</h3>
@@ -549,7 +543,6 @@ export default function WeightAndBalancePage() {
               <TabsContent value="cg">
                 <Card className="p-4">
                   <h3 className="font-semibold mb-3">Center of Gravity Analysis</h3>
-                  
                   <div className="bg-slate-50 p-4 rounded-md mb-4">
                     <div className="flex justify-between mb-2">
                       <span>Forward Limit (1.841m)</span>
@@ -568,7 +561,6 @@ export default function WeightAndBalancePage() {
                       Current CG: {results.weightAndBalance.centerOfGravity.toFixed(3)}m
                     </div>
                   </div>
-                  
                   <div className={`p-3 rounded-md ${results.weightAndBalance.isWithinLimits ? styles.success : styles.warning}`}>
                     <p className="font-medium">
                       {results.weightAndBalance.isWithinLimits 
