@@ -1,10 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import { WeightBalanceLayout } from '@/components/WeightBalanceLayout';
 import { Input } from '@/components/ui/input';
+import { WeightBalanceLayout } from '@/components/WeightBalanceLayout';
 import { Button } from '@/components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { Card } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -13,11 +12,12 @@ import { Separator } from '@/components/ui/separator';
 import { 
   WeightBalanceInputs, 
   WeightBalanceOutput, 
-  validateCGLimits, 
-  applyScenario, 
-  ScenarioType,
-  CONVERSION_FACTORS
+  CONVERSION_FACTORS,
+  TAXI_FUEL_LITRES,
+  calculateMinimumFuel,
+  CG_LIMITS
 } from '@/utils/weight-balance';
+import { validateWeightBalanceInputs } from '@/utils/validation';
 import styles from './styles.module.css';
 import LoadingSpinner from '@/components/LoadingSpinner';
 
@@ -27,7 +27,8 @@ export default function WeightAndBalancePage() {
     emptyArm: 1.86,
     pilotWeight: 75,
     passengerWeight: 80,
-    fuelMass: 59.79,
+    // fuelMass is now auto-populated so set an initial dummy value
+    fuelMass: 0,
     baggageWeight: 3,
     flightTime: {
       trip: 2.0,
@@ -35,15 +36,16 @@ export default function WeightAndBalancePage() {
       alternate: 0,
       other: 0.2,
       reserve: 0.5,
-      taxi: 0.2
-    }
+      // Updated default taxi fuel value to standard 3L
+      taxi: 3
+    },
+    // Added default scenario value
+    scenario: 'standard'
   });
   
   const [results, setResults] = useState<WeightBalanceOutput | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [scenario, setScenario] = useState<ScenarioType>('standard');
-  const [autoCalculateFuel, setAutoCalculateFuel] = useState(true);
 
   const handleInputChange = (field: keyof WeightBalanceInputs, value: number) => {
     setInputs(prev => ({ ...prev, [field]: value }));
@@ -51,35 +53,18 @@ export default function WeightAndBalancePage() {
 
   const handleFlightTimeChange = (field: keyof WeightBalanceInputs['flightTime'], value: number) => {
     setInputs(prev => {
-      const updatedFlightTime = { ...prev.flightTime, [field]: value };
-      
-      // Automatically calculate 10% contingency if trip time changes
+      let updatedFlightTime = { ...prev.flightTime, [field]: value };
+      // Auto-calculate contingency as 10% of trip fuel when trip time changes
       if (field === 'trip') {
         updatedFlightTime.contingency = Number((value * 0.1).toFixed(2));
       }
-      
-      const updatedInputs = {
-        ...prev,
-        flightTime: updatedFlightTime
-      };
-      
-      // Auto-calculate fuel mass from flight time if enabled
-      if (autoCalculateFuel) {
-        const totalTime = Object.values(updatedFlightTime).reduce((sum, val) => sum + val, 0);
-        const fuelLitres = totalTime * CONVERSION_FACTORS.FLIGHT_TIME_TO_FUEL_RATE;
-        updatedInputs.fuelMass = Number((fuelLitres * CONVERSION_FACTORS.LITRES_TO_KG).toFixed(2));
-      }
-      
-      return updatedInputs;
+      return { ...prev, flightTime: updatedFlightTime };
     });
   };
-  
-  const handleScenarioChange = (value: ScenarioType) => {
-    setScenario(value);
-    
-    // Apply scenario logic using the utility function from weight-balance.ts
-    const updatedInputs = applyScenario(inputs, value);
-    setInputs(updatedInputs);
+
+  // New handler for scenario dropdown
+  const handleScenarioChange = (value: string) => {
+    setInputs(prev => ({ ...prev, scenario: value }));
   };
 
   const handleCalculate = async () => {
@@ -87,9 +72,35 @@ export default function WeightAndBalancePage() {
     setError(null);
     
     try {
-      // Update input with scenario calculations before sending
-      const finalInputs = applyScenario(inputs, scenario);
-      
+      let finalInputs = { ...inputs };
+      // For maxFuel scenario, compute fuelMass using allowance logic.
+      if (inputs.scenario === 'maxFuel') {
+        const { emptyWeight, pilotWeight, passengerWeight, baggageWeight, flightTime } = inputs;
+        const totalStatic = emptyWeight + pilotWeight + passengerWeight + baggageWeight;
+        const remaining = CG_LIMITS.MAX_TAKEOFF_WEIGHT - totalStatic;
+        if (remaining <= 0) {
+          setError("Operation not feasible: total weight exceeds maximum takeoff weight.");
+          setLoading(false);
+          return;
+        }
+        const absoluteMaxFuel = 120 * CONVERSION_FACTORS.LITRES_TO_KG;
+        const fuelMass = remaining > absoluteMaxFuel ? absoluteMaxFuel : remaining;
+        finalInputs = { ...inputs, fuelMass };
+      } else {
+        // Standard scenario: auto-calculate fuel mass from flight time.
+        const minFuelLitres = calculateMinimumFuel(inputs);
+        const computedFuelMass = Number(((minFuelLitres - inputs.flightTime.taxi) * CONVERSION_FACTORS.LITRES_TO_KG).toFixed(2));
+        finalInputs = { ...inputs, fuelMass: computedFuelMass };
+      }
+
+      // Run weight and balance validations.
+      const validationErrors = validateWeightBalanceInputs(finalInputs);
+      if (validationErrors.length > 0) {
+        setError(validationErrors.map(err => err.message).join(', '));
+        setLoading(false);
+        return;
+      }
+
       const response = await fetch('/api/weight-balance', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -114,31 +125,6 @@ export default function WeightAndBalancePage() {
   return (
     <WeightBalanceLayout>
       <div className="space-y-6">
-        {/* Scenario Selector */}
-        <section>
-          <Card className="p-4">
-            <h3 className="font-medium mb-3">Scenario Selection</h3>
-            <Select value={scenario} onValueChange={(value) => handleScenarioChange(value as ScenarioType)}>
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select Scenario" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="standard">Standard</SelectItem>
-                <SelectItem value="maxFuel">Max Fuel / Min Baggage</SelectItem>
-                <SelectItem value="minFuel">Min Fuel / Max Baggage</SelectItem>
-                <SelectItem value="fixedBaggage">Fixed Baggage</SelectItem>
-                <SelectItem value="performanceLimited">Performance-Limited</SelectItem>
-              </SelectContent>
-            </Select>
-            <div className="mt-4 text-sm text-gray-600">
-              {scenario === 'maxFuel' && 'Maximizes fuel while minimizing baggage to stay within weight limits.'}
-              {scenario === 'minFuel' && 'Uses minimal flight fuel to maximize baggage capacity.'}
-              {scenario === 'fixedBaggage' && 'Keeps baggage weight fixed while adjusting fuel to ensure W&B is within limits.'}
-              {scenario === 'performanceLimited' && 'Adjusts weights to meet runway performance requirements.'}
-            </div>
-          </Card>
-        </section>
-
         <section>
           <h2 className="text-lg font-semibold mb-3">Aircraft Data</h2>
           <Card className="p-4">
@@ -205,32 +191,6 @@ export default function WeightAndBalancePage() {
                   max={20}
                   onChange={(e) => handleInputChange('baggageWeight', parseFloat(e.target.value))} 
                 />
-                {scenario === 'fixedBaggage' && (
-                  <p className="text-xs text-blue-600 mt-1">
-                    In Fixed Baggage mode, this value is prioritized and fuel is adjusted accordingly
-                  </p>
-                )}
-              </div>
-              <div>
-                <div className="flex justify-between">
-                  <Label htmlFor="fuelMass">Fuel Mass (kg)</Label>
-                  <label className="flex items-center text-xs">
-                    <input 
-                      type="checkbox" 
-                      checked={autoCalculateFuel} 
-                      onChange={() => setAutoCalculateFuel(!autoCalculateFuel)}
-                      className="mr-1" 
-                    />
-                    Auto from flight time
-                  </label>
-                </div>
-                <Input 
-                  id="fuelMass" 
-                  type="number" 
-                  value={inputs.fuelMass} 
-                  onChange={(e) => handleInputChange('fuelMass', parseFloat(e.target.value))} 
-                  disabled={autoCalculateFuel}
-                />
               </div>
             </div>
           </Card>
@@ -246,7 +206,7 @@ export default function WeightAndBalancePage() {
                   id="tripTime" 
                   type="number" 
                   value={inputs.flightTime.trip} 
-                  onChange={(e) => handleFlightTimeChange('trip', parseFloat(e.target.value))} 
+                  onChange={(e) => handleFlightTimeChange('trip', parseFloat(e.target.value))}
                 />
               </div>
               <div>
@@ -255,9 +215,8 @@ export default function WeightAndBalancePage() {
                   id="contingencyTime" 
                   type="number" 
                   value={inputs.flightTime.contingency} 
-                  onChange={(e) => handleFlightTimeChange('contingency', parseFloat(e.target.value))} 
+                  disabled
                 />
-                <p className="text-xs text-gray-500 mt-1">Auto-calculated as 10% of trip time</p>
               </div>
               <div>
                 <Label htmlFor="alternateTime">Alternate (hrs)</Label>
@@ -265,7 +224,7 @@ export default function WeightAndBalancePage() {
                   id="alternateTime" 
                   type="number" 
                   value={inputs.flightTime.alternate} 
-                  onChange={(e) => handleFlightTimeChange('alternate', parseFloat(e.target.value))} 
+                  onChange={(e) => handleFlightTimeChange('alternate', parseFloat(e.target.value))}
                 />
               </div>
               <div>
@@ -274,7 +233,7 @@ export default function WeightAndBalancePage() {
                   id="otherTime" 
                   type="number" 
                   value={inputs.flightTime.other} 
-                  onChange={(e) => handleFlightTimeChange('other', parseFloat(e.target.value))} 
+                  onChange={(e) => handleFlightTimeChange('other', parseFloat(e.target.value))}
                 />
               </div>
               <div>
@@ -283,31 +242,46 @@ export default function WeightAndBalancePage() {
                   id="reserveTime" 
                   type="number" 
                   value={inputs.flightTime.reserve} 
-                  onChange={(e) => handleFlightTimeChange('reserve', parseFloat(e.target.value))} 
+                  onChange={(e) => handleFlightTimeChange('reserve', parseFloat(e.target.value))}
                 />
               </div>
               <div>
-                <Label htmlFor="taxiTime">Taxi (hrs)</Label>
+                {/* Updated label to reflect taxi fuel in liters */}
+                <Label htmlFor="taxiTime">Taxi Fuel (L)</Label>
                 <Input 
                   id="taxiTime" 
                   type="number" 
                   value={inputs.flightTime.taxi} 
-                  onChange={(e) => handleFlightTimeChange('taxi', parseFloat(e.target.value))} 
+                  onChange={(e) => handleFlightTimeChange('taxi', parseFloat(e.target.value))}
                 />
-                <p className="text-xs text-gray-500 mt-1">Standard taxi fuel is 3L (2.16kg)</p>
               </div>
             </div>
-            {autoCalculateFuel && (
-              <div className="mt-4 p-2 bg-blue-50 rounded text-sm text-blue-700">
-                Total flight time: {Object.values(inputs.flightTime).reduce((sum, val) => sum + val, 0).toFixed(2)} hrs →
-                {' '}{(Object.values(inputs.flightTime).reduce((sum, val) => sum + val, 0) * CONVERSION_FACTORS.FLIGHT_TIME_TO_FUEL_RATE).toFixed(2)} L →
-                {' '}{inputs.fuelMass.toFixed(2)} kg
-              </div>
-            )}
           </Card>
         </section>
 
-        {/* Action Buttons */}
+        {/* New Scenario selection section */}
+        <section>
+          <h2 className="text-lg font-semibold mb-3">Scenario</h2>
+          <Card className="p-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="scenario">Select Scenario</Label>
+                <select
+                  id="scenario"
+                  value={inputs.scenario || 'standard'}
+                  onChange={(e) => handleScenarioChange(e.target.value)}
+                  className="border rounded p-2"
+                >
+                  <option value="standard">Standard</option>
+                  <option value="maxFuel">Max Fuel</option>
+                  <option value="minFuel">Min Fuel</option>
+                  <option value="fixedBaggage">Fixed Baggage</option>
+                </select>
+              </div>
+            </div>
+          </Card>
+        </section>
+
         <div className="flex justify-end space-x-4">
           <Button 
             disabled={loading}
@@ -326,14 +300,12 @@ export default function WeightAndBalancePage() {
           </Button>
         </div>
 
-        {/* Error Display */}
         {error && (
           <Alert variant="destructive">
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         )}
 
-        {/* Results Display */}
         {results && (
           <div className="space-y-6">
             <h2 className="text-xl font-semibold">Calculation Results</h2>
@@ -476,7 +448,6 @@ export default function WeightAndBalancePage() {
                       <span>Aft Limit (1.978m)</span>
                     </div>
                     <div className="relative h-6 bg-slate-200 rounded-full">
-                      {/* Position indicator based on CG position */}
                       <div 
                         className="absolute top-0 w-3 h-6 bg-blue-500 rounded-full"
                         style={{ 
@@ -503,7 +474,6 @@ export default function WeightAndBalancePage() {
                     </p>
                     <p>
                       CG Position: {results.weightAndBalance.centerOfGravity.toFixed(3)}m
-                      {!validateCGLimits(results.weightAndBalance.centerOfGravity) && ' (Outside 1.841m-1.978m)'}
                     </p>
                   </div>
                 </Card>

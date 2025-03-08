@@ -1,4 +1,5 @@
 import { PerformanceInputs } from "./performance";
+import { WeightBalanceInputs, CONVERSION_FACTORS, calculateMinimumFuel } from "./weight-balance";
 
 export interface ValidationError {
   field: string;
@@ -76,3 +77,65 @@ export function formatValidationErrors(errors: ValidationError[]): { [key: strin
     [field]: message
   }), {});
 }
+
+// Start writing validations for weight and balance from here.
+
+export function validateWeightBalanceInputs(inputs: WeightBalanceInputs): ValidationError[] {
+  const errors: ValidationError[] = [];
+  
+  // Mandatory field validation with NaN and non-negative check
+  if (inputs.emptyWeight == null || isNaN(inputs.emptyWeight)) {
+    errors.push({ field: "emptyWeight", message: "Empty Weight is required" });
+  } else if (inputs.emptyWeight < 0) {
+    errors.push({ field: "emptyWeight", message: "Empty Weight must be zero or positive" });
+  }
+  if (inputs.pilotWeight == null || isNaN(inputs.pilotWeight)) {
+    errors.push({ field: "pilotWeight", message: "Pilot Weight is required" });
+  } else if (inputs.pilotWeight < 0) {
+    errors.push({ field: "pilotWeight", message: "Pilot Weight must be zero or positive" });
+  }
+  if (inputs.passengerWeight == null || isNaN(inputs.passengerWeight)) {
+    errors.push({ field: "passengerWeight", message: "Passenger Weight is required" });
+  } else if (inputs.passengerWeight < 0) {
+    errors.push({ field: "passengerWeight", message: "Passenger Weight must be zero or positive" });
+  }
+  if (inputs.baggageWeight == null || isNaN(inputs.baggageWeight)) {
+    errors.push({ field: "baggageWeight", message: "Baggage Weight is required" });
+  } else if (inputs.baggageWeight < 0) {
+    errors.push({ field: "baggageWeight", message: "Baggage Weight must be zero or positive" });
+  }
+  if (inputs.fuelMass == null || isNaN(inputs.fuelMass)) {
+    errors.push({ field: "fuelMass", message: "Fuel Mass is required" });
+  } else if (inputs.fuelMass < 0) {
+    errors.push({ field: "fuelMass", message: "Fuel Mass must be zero or positive" });
+  }
+  
+  const flightTimeFields: (keyof WeightBalanceInputs["flightTime"])[] = ["trip", "alternate", "other", "reserve", "taxi"];
+  flightTimeFields.forEach(field => {
+    if (inputs.flightTime[field] == null || isNaN(inputs.flightTime[field])) {
+      errors.push({ field: `flightTime.${field}`, message: `Flight Time ${field} is required` });
+    } else if (inputs.flightTime[field] < 0) {
+      errors.push({ field: `flightTime.${field}`, message: `Flight Time ${field} must be zero or positive` });
+    }
+  });
+  
+  // Maximum baggage weight check
+  if (inputs.baggageWeight > 20) {
+    errors.push({ field: "baggageWeight", message: "Baggage Weight cannot exceed 20 kg" });
+  }
+  
+  // Calculate takeoff weight (emptyWeight + pilotWeight + passengerWeight + fuelMass + baggageWeight)
+  const takeoffWeight = inputs.emptyWeight + inputs.pilotWeight + inputs.passengerWeight + inputs.fuelMass + inputs.baggageWeight;
+  if (takeoffWeight > 650) {
+    errors.push({ field: "takeoffWeight", message: "Takeoff Weight cannot exceed 650 kg" });
+  }
+  
+  // Fuel capacity check (total fuel in litres should not exceed 120 L)
+  const totalFuelLitres = calculateMinimumFuel(inputs);
+  if (totalFuelLitres > 120) {
+    errors.push({ field: "fuelMass", message: "Fuel capacity cannot exceed 120 L" });
+  }
+  
+  return errors;
+}
+
