@@ -170,13 +170,13 @@ export function calculateWeightAndBalance(inputs: WeightBalanceInputs): WeightBa
   return {
     minimumFuelRequired: {
       time: flightTime.trip + flightTime.contingency + flightTime.alternate + flightTime.other + flightTime.reserve,
-      litres: calculateMinimumFuel(inputs),
-      weight: Number((calculateMinimumFuel(inputs) * CONVERSION_FACTORS.LITRES_TO_KG).toFixed(2))
+      litres: Number((fuelMass / CONVERSION_FACTORS.LITRES_TO_KG).toFixed(2)),  // Convert from actual flight fuel
+      weight: fuelMass  // Use actual flight fuel weight
     },
     actualFuelState: {
       actualDip: {
-        litres: Number((fuelMass / CONVERSION_FACTORS.LITRES_TO_KG).toFixed(2)) + flightTime.taxi,
-        weight: fuelMass + Number((flightTime.taxi * CONVERSION_FACTORS.LITRES_TO_KG).toFixed(2))
+        litres: Number((fuelMass / CONVERSION_FACTORS.LITRES_TO_KG).toFixed(2)),
+        weight: fuelMass
       },
       taxi: {
         litres: flightTime.taxi,
@@ -249,9 +249,62 @@ export function convertImperialGallonToKG(gallons: number): number {
  */
 export function applyScenario(
   inputs: WeightBalanceInputs, 
-  // Remove scenario parameter as only standard remains
-  scenario?: string 
+  scenario: ScenarioType
 ): WeightBalanceInputs {
-  // ...existing code...
-  return inputs;
+  const updatedInputs = {...inputs};
+  
+  switch (scenario) {
+    case 'minFuel':
+      // Calculate minimum fuel requirements
+      const minFuelLitres = calculateMinimumFuel(updatedInputs);
+      const minFuelWeight = Number((minFuelLitres * CONVERSION_FACTORS.LITRES_TO_KG).toFixed(2));
+      const actualFlightFuel = Number((minFuelWeight - TAXI_FUEL_WEIGHT).toFixed(2));
+
+      // Calculate weights without baggage
+      const baseWeight = Number((
+        updatedInputs.emptyWeight +
+        updatedInputs.pilotWeight +
+        updatedInputs.passengerWeight +
+        actualFlightFuel
+      ).toFixed(2));
+
+      // Calculate remaining weight for baggage with precision handling
+      const remainingWeight = Number((CG_LIMITS.MAX_TAKEOFF_WEIGHT - baseWeight).toFixed(2));
+      
+      // Calculate max allowable baggage
+      const maxBaggage = Math.min(
+        CG_LIMITS.MAX_BAGGAGE_WEIGHT,
+        Math.max(0, remainingWeight)
+      );
+
+      // Final check to ensure we don't exceed MAX_TAKEOFF_WEIGHT
+      const totalWeight = Number((baseWeight + maxBaggage).toFixed(2));
+      const adjustedBaggage = totalWeight > CG_LIMITS.MAX_TAKEOFF_WEIGHT 
+        ? Number((maxBaggage - (totalWeight - CG_LIMITS.MAX_TAKEOFF_WEIGHT)).toFixed(2))
+        : maxBaggage;
+
+      return {
+        ...updatedInputs,
+        scenario: scenario,
+        baggageWeight: adjustedBaggage,
+        fuelMass: actualFlightFuel
+      };
+    
+    case 'maxFuel':
+      // Similar logic for maxFuel...
+      return updatedInputs;
+    
+    case 'fixedBaggage':
+      // Similar logic for fixedBaggage...
+      return updatedInputs;
+    
+    default:
+      // For 'standard' scenario
+      return {
+        ...updatedInputs,
+        scenario: scenario,
+        baggageWeight: 3,
+        fuelMass: 0
+      };
+  }
 }

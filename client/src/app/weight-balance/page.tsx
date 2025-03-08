@@ -7,16 +7,27 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Card } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { Separator } from '@/components/ui/separator';
+import { AlertTriangle } from 'lucide-react';
 import { 
   WeightBalanceInputs, 
   WeightBalanceOutput, 
   CONVERSION_FACTORS,
   TAXI_FUEL_LITRES,
   calculateMinimumFuel,
-  CG_LIMITS
+  CG_LIMITS,
+  applyScenario,
+  ScenarioType  // Import ScenarioType from utils
 } from '@/utils/weight-balance';
+import { 
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue 
+} from "@/components/ui/select";
+
 import { validateWeightBalanceInputs } from '@/utils/validation';
 import styles from './styles.module.css';
 import LoadingSpinner from '@/components/LoadingSpinner';
@@ -27,44 +38,66 @@ export default function WeightAndBalancePage() {
     emptyArm: 1.86,
     pilotWeight: 75,
     passengerWeight: 80,
-    // fuelMass is now auto-populated so set an initial dummy value
     fuelMass: 0,
-    baggageWeight: 3,
+    baggageWeight: 3,  // Changed from 20 to a reasonable default for standard scenario
     flightTime: {
       trip: 2.0,
       contingency: 0.42,
       alternate: 0,
       other: 0.2,
       reserve: 0.5,
-      // Updated default taxi fuel value to standard 3L
       taxi: 3
     },
-    // Added default scenario value
-    scenario: 'standard'
+    scenario: 'standard' as ScenarioType
   });
-  
+
+  const [scenario, setScenario] = useState<ScenarioType>('standard');
   const [results, setResults] = useState<WeightBalanceOutput | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [maxAllowableBaggage, setMaxAllowableBaggage] = useState<number | null>(null);
 
   const handleInputChange = (field: keyof WeightBalanceInputs, value: number) => {
-    setInputs(prev => ({ ...prev, [field]: value }));
+    setInputs(prev => {
+      // First update the field
+      const updatedInputs = { ...prev, [field]: value };
+      
+      // If we're in a special scenario, reapply the scenario logic
+      if (prev.scenario !== 'standard') {
+        return applyScenario(updatedInputs, prev.scenario);
+      }
+      
+      return updatedInputs;
+    });
   };
 
   const handleFlightTimeChange = (field: keyof WeightBalanceInputs['flightTime'], value: number) => {
     setInputs(prev => {
+      // Update flight time first
       let updatedFlightTime = { ...prev.flightTime, [field]: value };
+      
       // Auto-calculate contingency as 10% of trip fuel when trip time changes
       if (field === 'trip') {
         updatedFlightTime.contingency = Number((value * 0.1).toFixed(2));
       }
-      return { ...prev, flightTime: updatedFlightTime };
+
+      let updatedInputs = { ...prev, flightTime: updatedFlightTime };
+
+      // If we're in a special scenario, reapply the scenario logic
+      if (prev.scenario !== 'standard') {
+        return applyScenario(updatedInputs, prev.scenario);
+      }
+
+      return updatedInputs;
     });
   };
 
-  // New handler for scenario dropdown
-  const handleScenarioChange = (value: string) => {
-    setInputs(prev => ({ ...prev, scenario: value }));
+  const handleScenarioChange = (newScenario: ScenarioType) => {
+    setScenario(newScenario);
+    setInputs(prev => {
+      // Simply apply the new scenario to current inputs
+      return applyScenario(prev, newScenario);
+    });
   };
 
   const handleCalculate = async () => {
@@ -73,19 +106,45 @@ export default function WeightAndBalancePage() {
     
     try {
       let finalInputs = { ...inputs };
-      // For maxFuel scenario, compute fuelMass using allowance logic.
+      
+      // Calculate minimum required fuel first
+      const minFuelRequired = calculateMinimumFuel(inputs);
+      
       if (inputs.scenario === 'maxFuel') {
-        const { emptyWeight, pilotWeight, passengerWeight, baggageWeight, flightTime } = inputs;
+        const { emptyWeight, pilotWeight, passengerWeight, baggageWeight } = inputs;
         const totalStatic = emptyWeight + pilotWeight + passengerWeight + baggageWeight;
         const remaining = CG_LIMITS.MAX_TAKEOFF_WEIGHT - totalStatic;
+        
+        // Convert remaining weight to liters (using reverse conversion factor)
+        const maxPossibleFuelLitres = remaining / CONVERSION_FACTORS.LITRES_TO_KG;
+        
         if (remaining <= 0) {
           setError("Operation not feasible: total weight exceeds maximum takeoff weight.");
           setLoading(false);
           return;
         }
-        const absoluteMaxFuel = 120 * CONVERSION_FACTORS.LITRES_TO_KG;
-        const fuelMass = remaining > absoluteMaxFuel ? absoluteMaxFuel : remaining;
+        
+        // Check if maximum possible fuel meets minimum required
+        if (maxPossibleFuelLitres < minFuelRequired) {
+          setError(
+            `Operation not feasible: Maximum possible fuel (${maxPossibleFuelLitres.toFixed(1)}L) ` +
+            `is less than minimum required fuel (${minFuelRequired.toFixed(1)}L). ` +
+            `Consider reducing payload or recalculating flight times.`
+          );
+          setLoading(false);
+          return;
+        }
+        
+        const absoluteMaxFuel = 120; // Maximum tank capacity in liters
+        const fuelLitres = Math.min(absoluteMaxFuel, maxPossibleFuelLitres);
+        const fuelMass = fuelLitres * CONVERSION_FACTORS.LITRES_TO_KG;
         finalInputs = { ...inputs, fuelMass };
+      } else if (inputs.scenario === 'minFuel') {
+        // Calculate actual flight fuel for minFuel scenario
+        const minFuelLitres = calculateMinimumFuel(inputs);
+        const minFuelWeight = Number((minFuelLitres * CONVERSION_FACTORS.LITRES_TO_KG).toFixed(2));
+        const actualFlightFuel = Number((minFuelWeight - TAXI_FUEL_LITRES * CONVERSION_FACTORS.LITRES_TO_KG).toFixed(2));
+        finalInputs = { ...inputs, fuelMass: actualFlightFuel };
       } else {
         // Standard scenario: auto-calculate fuel mass from flight time.
         const minFuelLitres = calculateMinimumFuel(inputs);
@@ -113,6 +172,7 @@ export default function WeightAndBalancePage() {
       }
 
       const data = await response.json();
+
       setResults(data);
     } catch (error) {
       console.error('Error:', error);
@@ -182,15 +242,58 @@ export default function WeightAndBalancePage() {
                   onChange={(e) => handleInputChange('passengerWeight', parseFloat(e.target.value))} 
                 />
               </div>
-              <div>
-                <Label htmlFor="baggageWeight">Baggage Weight (kg) (max 20kg)</Label>
-                <Input 
-                  id="baggageWeight" 
-                  type="number" 
-                  value={inputs.baggageWeight} 
-                  max={20}
-                  onChange={(e) => handleInputChange('baggageWeight', parseFloat(e.target.value))} 
+              <div className="space-y-2">
+                <Label htmlFor="baggageWeight">
+                  Baggage Weight (kg)
+                  {scenario === 'minFuel' && ' (Auto-calculated)'}
+                </Label>
+                <Input
+                  id="baggageWeight"
+                  type="number"
+                  value={inputs.baggageWeight}  // Use the value from inputs state
+                  onChange={(e) => handleInputChange('baggageWeight', parseFloat(e.target.value))}
+                  disabled={scenario === 'minFuel'}
+                  className={scenario === 'minFuel' ? 'bg-gray-100' : ''}
                 />
+                {scenario === 'minFuel' && maxAllowableBaggage !== null && (
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Maximum allowable baggage: {maxAllowableBaggage.toFixed(1)} kg
+                    {maxAllowableBaggage === CG_LIMITS.MAX_BAGGAGE_WEIGHT && (
+                      <span className="block">
+                        (Limited by maximum baggage weight limit of 20 kg)
+                      </span>
+                    )}
+                    {maxAllowableBaggage < CG_LIMITS.MAX_BAGGAGE_WEIGHT && (
+                      <span className="block">
+                        (Limited by maximum takeoff weight of 650 kg)
+                      </span>
+                    )}
+                  </p>
+                )}
+              </div>
+            </div>
+          </Card>
+        </section>
+
+        <section>
+          <h2 className="text-lg font-semibold mb-3">Scenario</h2>
+          <Card className="p-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="scenario">Select Scenario</Label>
+                <Select
+                  value={scenario}
+                  onValueChange={handleScenarioChange}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select a scenario" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="standard">Standard</SelectItem>
+                    <SelectItem value="maxFuel">Max Fuel</SelectItem>
+                    <SelectItem value="minFuel">Min Fuel</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
           </Card>
@@ -259,29 +362,6 @@ export default function WeightAndBalancePage() {
           </Card>
         </section>
 
-        {/* New Scenario selection section */}
-        <section>
-          <h2 className="text-lg font-semibold mb-3">Scenario</h2>
-          <Card className="p-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="scenario">Select Scenario</Label>
-                <select
-                  id="scenario"
-                  value={inputs.scenario || 'standard'}
-                  onChange={(e) => handleScenarioChange(e.target.value)}
-                  className="border rounded p-2"
-                >
-                  <option value="standard">Standard</option>
-                  <option value="maxFuel">Max Fuel</option>
-                  <option value="minFuel">Min Fuel</option>
-                  <option value="fixedBaggage">Fixed Baggage</option>
-                </select>
-              </div>
-            </div>
-          </Card>
-        </section>
-
         <div className="flex justify-end space-x-4">
           <Button 
             disabled={loading}
@@ -301,8 +381,36 @@ export default function WeightAndBalancePage() {
         </div>
 
         {error && (
-          <Alert variant="destructive">
-            <AlertDescription>{error}</AlertDescription>
+          <Alert variant="destructive" className={styles.errorAlert}>
+            <AlertTriangle className="h-4 w-4" />
+            <AlertTitle>
+              {inputs.scenario === 'maxFuel' ? 'Fuel Planning Error' : 'Calculation Error'}
+            </AlertTitle>
+            <AlertDescription className="mt-2">
+              <div className="space-y-2">
+                <p>{error}</p>
+                {inputs.scenario === 'maxFuel' && (
+                  <div className="mt-2 text-sm">
+                    <p className="font-semibold">Current values:</p>
+                    <ul className="list-disc pl-4 mt-1">
+                      <li>Total payload weight: {(
+                        inputs.pilotWeight + 
+                        inputs.passengerWeight + 
+                        inputs.baggageWeight
+                      ).toFixed(1)} kg</li>
+                      <li>Minimum fuel required: {calculateMinimumFuel(inputs).toFixed(1)} L</li>
+                      <li>Available weight for fuel: {(
+                        CG_LIMITS.MAX_TAKEOFF_WEIGHT - 
+                        inputs.emptyWeight - 
+                        inputs.pilotWeight - 
+                        inputs.passengerWeight - 
+                        inputs.baggageWeight
+                      ).toFixed(1)} kg</li>
+                    </ul>
+                  </div>
+                )}
+              </div>
+            </AlertDescription>
           </Alert>
         )}
 

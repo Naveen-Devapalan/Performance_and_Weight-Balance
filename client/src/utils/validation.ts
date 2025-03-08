@@ -1,5 +1,10 @@
 import { PerformanceInputs } from "./performance";
-import { WeightBalanceInputs, CONVERSION_FACTORS, calculateMinimumFuel } from "./weight-balance";
+import { 
+  WeightBalanceInputs, 
+  CONVERSION_FACTORS, 
+  calculateMinimumFuel,
+  CG_LIMITS
+} from "./weight-balance";
 
 export interface ValidationError {
   field: string;
@@ -124,10 +129,21 @@ export function validateWeightBalanceInputs(inputs: WeightBalanceInputs): Valida
     errors.push({ field: "baggageWeight", message: "Baggage Weight cannot exceed 20 kg" });
   }
   
-  // Calculate takeoff weight (emptyWeight + pilotWeight + passengerWeight + fuelMass + baggageWeight)
-  const takeoffWeight = inputs.emptyWeight + inputs.pilotWeight + inputs.passengerWeight + inputs.fuelMass + inputs.baggageWeight;
-  if (takeoffWeight > 650) {
-    errors.push({ field: "takeoffWeight", message: "Takeoff Weight cannot exceed 650 kg" });
+  // Calculate takeoff weight with proper precision
+  const takeoffWeight = Number((
+    inputs.emptyWeight + 
+    inputs.pilotWeight + 
+    inputs.passengerWeight + 
+    inputs.fuelMass + 
+    inputs.baggageWeight
+  ).toFixed(2));
+
+  // Add small tolerance (0.01) to account for floating-point precision
+  if (takeoffWeight > (CG_LIMITS.MAX_TAKEOFF_WEIGHT + 0.01)) {
+    errors.push({ 
+      field: "takeoffWeight", 
+      message: `Takeoff Weight (${takeoffWeight} kg) cannot exceed ${CG_LIMITS.MAX_TAKEOFF_WEIGHT} kg` 
+    });
   }
   
   // Fuel capacity check (total fuel in litres should not exceed 120 L)
