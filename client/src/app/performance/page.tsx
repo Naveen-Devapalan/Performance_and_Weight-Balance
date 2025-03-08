@@ -810,57 +810,57 @@ export default function PerformanceCalculator() {
 
                       <Separator />
 
-                      <div className="space-y-6">
+                      <div className={styles.calculationStep}>
                         <h4 className={styles.calculationHeading}>Step 1: Base Distances</h4>
                         <div className="grid grid-cols-2 gap-4">
-                          <p className="text-sm">Ground Roll (A): {results.landingPerformance.groundRoll.toFixed(2)}m</p>
-                          <p className="text-sm">50ft AGL Distance (B): {results.landingPerformance.landingDistance50ft.toFixed(2)}m</p>
+                          <p className="text-sm">Ground Roll (A): <span className={styles.windValue}>{results.landingPerformance.groundRoll.toFixed(2)}m</span></p>
+                          <p className="text-sm">50ft AGL Distance (B): <span className={styles.windValue}>{results.landingPerformance.landingDistance50ft.toFixed(2)}m</span></p>
                         </div>
                       </div>
 
-                      <div>
+                      <div className={styles.calculationStep}>
                         <h4 className={styles.calculationHeading}>Step 2: Wind Correction</h4>
                         <p className="text-sm">
                           {results.windCalculation.part61.headwind 
-                            ? `${(inputs.part === 61 ? (results.windCalculation.part61.headwind || 0) : (results.windCalculation.part135.headwind || 0)).toFixed(2)} kts × -4m = ${(results.landingPerformance.windCorrectedDistance - results.landingPerformance.landingDistance50ft).toFixed(2)}m`
-                            : `${(inputs.part === 61 ? (results.windCalculation.part61.tailwind || 0) : (results.windCalculation.part135.tailwind || 0)).toFixed(2)} kts × +13m = ${(results.landingPerformance.windCorrectedDistance - results.landingPerformance.landingDistance50ft).toFixed(2)}m`
-                          } + {results.landingPerformance.landingDistance50ft.toFixed(2)}m = {results.landingPerformance.windCorrectedDistance.toFixed(2)}m (C)
+                            ? <><span className={styles.windValue}>{(inputs.part === 61 ? (results.windCalculation.part61.headwind || 0) : (results.windCalculation.part135.headwind || 0)).toFixed(2)} kts</span> × -4m = <span className={styles.windValue}>{(results.landingPerformance.windCorrectedDistance - results.landingPerformance.landingDistance50ft).toFixed(2)}m</span></>
+                            : <><span className={styles.windValue}>{(inputs.part === 61 ? (results.windCalculation.part61.tailwind || 0) : (results.windCalculation.part135.tailwind || 0)).toFixed(2)} kts</span> × +13m = <span className={styles.windValue}>{(results.landingPerformance.windCorrectedDistance - results.landingPerformance.landingDistance50ft).toFixed(2)}m</span></>
+                          } + <span className={styles.windValue}>{results.landingPerformance.landingDistance50ft.toFixed(2)}m</span> = <span className={styles.importantValue}>{results.landingPerformance.windCorrectedDistance.toFixed(2)}m (C)</span>
                         </p>
                       </div>
 
-                      <div>
+                      <div className={styles.calculationStep}>
                         <h4 className={styles.calculationHeading}>Step 3: Surface Correction</h4>
                         {inputs.departure.surface === 'B' ? (
                           <p className="text-sm">
-                            Ground Roll {results.landingPerformance.groundRoll.toFixed(2)}m × -10% = 
-                            {(results.landingPerformance.groundRoll * -0.1).toFixed(2)}m + {results.landingPerformance.windCorrectedDistance.toFixed(2)}m = 
-                            {results.landingPerformance.surfaceCorrectedDistance.toFixed(2)}m (D)
+                            Ground Roll <span className={styles.windValue}>{results.landingPerformance.groundRoll.toFixed(2)}m</span> × -10% = 
+                            <span className={styles.windValue}>{(results.landingPerformance.groundRoll * -0.1).toFixed(2)}m</span> + <span className={styles.windValue}>{results.landingPerformance.windCorrectedDistance.toFixed(2)}m</span> = 
+                            <span className={styles.importantValue}>{results.landingPerformance.surfaceCorrectedDistance.toFixed(2)}m (D)</span>
                           </p>
                         ) : (
                           <p className="text-sm">No correction required for grass surface</p>
                         )}
                       </div>
 
-                      <div>
+                      <div className={styles.calculationStep}>
                         <h4 className={styles.calculationHeading}>Step 4: Slope Correction</h4>
                         <p className="text-sm">
-                          Ground Roll {results.landingPerformance.groundRoll.toFixed(2)}m × ({Number(inputs.slope.value).toFixed(2)} × {inputs.slope.direction === 'U' ? '-' : '+'}3%) = 
-                          {(results.landingPerformance.slopeCorrectedDistance - results.landingPerformance.surfaceCorrectedDistance).toFixed(2)}m + 
-                          {results.landingPerformance.surfaceCorrectedDistance.toFixed(2)}m = {results.landingPerformance.slopeCorrectedDistance.toFixed(2)}m
+                          Ground Roll <span className={styles.windValue}>{results.landingPerformance.groundRoll.toFixed(2)}m</span> × (<span className={styles.windValue}>{Number(inputs.slope.value).toFixed(2)}</span> × {inputs.slope.direction === 'U' ? '-' : '+'}3%) = 
+                          <span className={styles.windValue}>{(results.landingPerformance.slopeCorrectedDistance - results.landingPerformance.surfaceCorrectedDistance).toFixed(2)}m</span> + 
+                          <span className={styles.windValue}>{results.landingPerformance.surfaceCorrectedDistance.toFixed(2)}m</span> = <span className={styles.importantValue}>{results.landingPerformance.slopeCorrectedDistance.toFixed(2)}m</span>
                         </p>
                       </div>
 
-                      <div>
+                      <div className={styles.calculationStep}>
                         <h4 className={styles.calculationHeading}>Step 5: Final Safety Factor</h4>
                         <p className="text-sm">
-                          {results.landingPerformance.slopeCorrectedDistance.toFixed(2)}m × 1.67 = 
+                          <span className={styles.windValue}>{results.landingPerformance.slopeCorrectedDistance.toFixed(2)}m</span> × 1.67 = 
                           <span className={styles.importantValue}>{results.landingPerformance.finalLandingDistance.toFixed(2)}m LDR</span>
                         </p>
                       </div>
 
                       <Separator />
 
-                      <div>
+                      <div className={styles.calculationStep}>
                         <h4 className={styles.calculationHeading}>LDA Check</h4>
                         <p className="text-sm">
                           {Number(inputs.departure.lda) > 0
