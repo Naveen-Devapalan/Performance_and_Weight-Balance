@@ -10,9 +10,13 @@ interface WeightBalanceLayoutProps {
 
 export function WeightBalanceLayout({ children }: WeightBalanceLayoutProps) {
   return (
-    <PerformanceLayout title="W&B CALCULATOR (PART 135) – TECNAM P2008JC">
-      <div className="space-y-6">
-
+    <PerformanceLayout title="Weight & Balance Calculator">
+      <div className="space-y-8">
+        <div className="border-b pb-4 mb-2">
+          <p className="text-sm text-muted-foreground text-center italic">
+            Precise weight and balance calculations for Tecnam P2008JC (Part 135)
+          </p>
+        </div>
         {children}
       </div>
     </PerformanceLayout>

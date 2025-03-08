@@ -45,12 +45,12 @@ export function FormField({
   };
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-2 group">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Label 
             htmlFor={id}
-            className={error ? 'text-destructive' : ''}
+            className={`${error ? 'text-destructive' : ''} transition-colors duration-200 group-hover:text-foreground/90`}
           >
             {label}
             {required && <span className="text-destructive ml-1">*</span>}
@@ -58,10 +58,10 @@ export function FormField({
           {tooltip && (
             <HoverCard openDelay={200}>
               <HoverCardTrigger asChild>
-                <Info className="h-4 w-4 text-muted-foreground cursor-help" />
+                <Info className="h-4 w-4 text-muted-foreground cursor-help hover:text-blue-500 transition-colors" />
               </HoverCardTrigger>
               <HoverCardContent 
-                className="w-80 text-sm" 
+                className="w-80 text-sm shadow-lg border-slate-200 backdrop-blur-sm" 
                 side="top"
                 align="start"
               >
@@ -71,7 +71,7 @@ export function FormField({
           )}
         </div>
         {units && (
-          <span className="text-sm text-muted-foreground">
+          <span className="text-sm text-muted-foreground font-medium px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800">
             {units}
           </span>
         )}
@@ -89,13 +89,14 @@ export function FormField({
           className={`
             ${type === 'number' ? 'font-mono tabular-nums text-right pr-3' : ''}
             ${error ? 'border-destructive' : ''}
-            transition-colors duration-200
-            focus-visible:ring-1 focus-visible:ring-ring
+            transition-all duration-200
+            focus-visible:ring-1 focus-visible:ring-ring focus-visible:shadow-sm
             hover:border-input
+            group-hover:border-slate-300 dark:group-hover:border-slate-700
           `}
         />
         {error && (
-          <div className="absolute -bottom-5 left-0 text-xs text-destructive animate-in fade-in-50 slide-in-from-top-1">
+          <div className="absolute -bottom-5 left-0 text-xs text-destructive animate-in fade-in-50 slide-in-from-top-1 font-medium">
             {error}
           </div>
         )}
