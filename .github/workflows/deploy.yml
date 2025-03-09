@@ -38,10 +38,6 @@ jobs:
         run: |
           cd client
           npm run build
-          npm run export
-      
-      - name: List Export Directory Contents
-        run: ls -la client/out
       
       - name: Deploy to GitHub Pages
         env:
