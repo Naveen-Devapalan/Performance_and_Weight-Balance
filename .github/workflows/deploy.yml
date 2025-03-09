@@ -50,10 +50,7 @@ jobs:
           git config --global user.name 'github-actions'
           git config --global user.email 'github-actions@github.com'
           git remote set-url origin https://x-access-token:${{ secrets.ACTIONS_DEPLOY_KEY }}@github.com/${{ github.repository }}.git
-          # Temporarily override .gitignore for client/out
-          echo '!client/out' >> .gitignore
-          echo '!client/out/**' >> .gitignore
-          git add -f client/out
+          git add -A
           git commit -m "Deploy to GitHub Pages"
           git push -f origin HEAD:gh-pages
         working-directory: client/out
