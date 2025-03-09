@@ -133,7 +133,25 @@ async function getInterpolatedPerformance(db: Database, pressureAltitude: number
   });
 }
 
-function calculateTakeoffDistances(baseData: any, inputs: PerformanceInputs, windCalc: any) {
+interface BaseData {
+  groundRoll: number;
+  distance50ft: number;
+}
+
+interface WindCalculation {
+  part61: {
+    headwind: number | null;
+    tailwind: number | null;
+    crosswind: number;
+  };
+  part135: {
+    headwind: number | null;
+    tailwind: number | null;
+    crosswind: number;
+  };
+}
+
+function calculateTakeoffDistances(baseData: BaseData, inputs: PerformanceInputs, windCalc: WindCalculation) {
   const part = inputs.part;
   const windComponents = part === 135 ? windCalc.part135 : windCalc.part61;
   
@@ -178,7 +196,7 @@ function calculateTakeoffDistances(baseData: any, inputs: PerformanceInputs, win
   };
 }
 
-function calculateLandingDistances(baseData: any, inputs: PerformanceInputs, windCalc: any) {
+function calculateLandingDistances(baseData: BaseData, inputs: PerformanceInputs, windCalc: WindCalculation) {
   const part = inputs.part;
   const windComponents = part === 135 ? windCalc.part135 : windCalc.part61;
   

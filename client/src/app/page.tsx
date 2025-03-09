@@ -1,4 +1,3 @@
-import Image from "next/image";
 import Link from "next/link";
 
 export default function Home() {
@@ -81,7 +80,7 @@ export default function Home() {
             <h2 className="text-2xl font-semibold mb-4 text-slate-900 dark:text-slate-100">About This Tool</h2>
             <p className="mb-6 text-slate-600 dark:text-slate-300 leading-relaxed">
               This application helps pilots calculate critical performance metrics and weight-balance for the Tecnam P2008JC aircraft.
-              All calculations are based on the manufacturer's data and comply with aviation regulations.
+              All calculations are based on the manufacturer&apos;s data and comply with aviation regulations.
             </p>
             <ul className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-slate-700 dark:text-slate-300">
               <li className="flex items-start space-x-2">

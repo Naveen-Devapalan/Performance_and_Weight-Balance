@@ -1,10 +1,14 @@
 import { PerformanceInputs } from "./performance";
 import { 
   WeightBalanceInputs, 
-  CONVERSION_FACTORS, 
   calculateMinimumFuel,
   CG_LIMITS
 } from "./weight-balance";
+
+// Define recursive type for nested objects to avoid using 'any'
+export type NestedObject = {
+  [key: string]: string | number | boolean | null | undefined | NestedObject;
+};
 
 export interface ValidationError {
   field: string;
@@ -27,8 +31,19 @@ export function validateRequiredFields(inputs: PerformanceInputs): ValidationErr
   ];
 
   requiredFields.forEach(({ path, label }) => {
-    const value = path.split('.').reduce((obj: any, key) => obj?.[key], inputs);
-    if (value === '' || value === null || value === undefined) {
+    // Using a safer approach to navigate deeply nested objects
+    const pathParts = path.split('.');
+    let current: any = inputs;
+    
+    for (const part of pathParts) {
+      if (current === undefined || current === null) {
+        current = undefined;
+        break;
+      }
+      current = current[part];
+    }
+    
+    if (current === '' || current === null || current === undefined) {
       errors.push({
         field: path,
         message: `${label} is required`
@@ -56,7 +71,19 @@ export function validateRequiredFields(inputs: PerformanceInputs): ValidationErr
   ];
 
   numericRanges.forEach(({ path, min, max, label, units }) => {
-    const value = Number(path.split('.').reduce((obj: any, key) => obj?.[key], inputs));
+    // Using a safer approach to navigate deeply nested objects
+    const pathParts = path.split('.');
+    let current: any = inputs;
+    
+    for (const part of pathParts) {
+      if (current === undefined || current === null) {
+        current = undefined;
+        break;
+      }
+      current = current[part];
+    }
+    
+    const value = Number(current);
     if (!isNaN(value) && (value < min || value > max)) {
       errors.push({
         field: path,

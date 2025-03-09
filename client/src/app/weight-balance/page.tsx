@@ -8,7 +8,6 @@ import { Label } from '@/components/ui/label';
 import { Card } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
-import { Separator } from '@/components/ui/separator';
 import { AlertTriangle } from 'lucide-react';
 import { 
   WeightBalanceInputs, 
@@ -34,19 +33,19 @@ import LoadingSpinner from '@/components/LoadingSpinner';
 export default function WeightAndBalancePage() {
   // Consolidate scenario into inputs state
   const [inputs, setInputs] = useState<WeightBalanceInputs>({
-    emptyWeight: 432.21,
-    emptyArm: 1.86,
-    pilotWeight: 75,
-    passengerWeight: 80,
+    emptyWeight: 0,
+    emptyArm: 0,
+    pilotWeight: 0,
+    passengerWeight: 0,
     fuelMass: 0, // will be set based on calculations (actual flight fuel)
-    baggageWeight: 3, // default for standard scenario
+    baggageWeight: 0,
     flightTime: {
-      trip: 2.0,
-      contingency: 0.42,
+      trip: 0,
+      contingency: 0,
       alternate: 0,
-      other: 0.2,
-      reserve: 0.5,
-      taxi: 3
+      other: 0,
+      reserve: 0,
+      taxi: 0
     },
     scenario: 'standard' as ScenarioType
   });
@@ -54,7 +53,7 @@ export default function WeightAndBalancePage() {
   const [results, setResults] = useState<WeightBalanceOutput | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [maxAllowableBaggage, setMaxAllowableBaggage] = useState<number | null>(null);
+  const [maxAllowableBaggage] = useState<number | null>(null);
 
   // --- Helper Functions for Fuel Calculations ---
   // Returns an object with both the flight fuel mass (fuel that will be used during flight)
@@ -92,6 +91,10 @@ export default function WeightAndBalancePage() {
   }
 
   function computeMinFuel(inputs: WeightBalanceInputs): { flightFuelMass: number, actualDip: number } {
+    if (inputs.scenario === 'minFuel' && inputs.baggageWeight <= 0) {
+      throw new Error("Takeoff weight above 650 Kgs. Operation not feasible.");
+    }
+    
     const minFuelLitres = calculateMinimumFuel(inputs);
     const actualDip = Number((minFuelLitres * CONVERSION_FACTORS.LITRES_TO_KG).toFixed(2));
     // In minFuel scenario, actual flight fuel is the dip minus a constant taxi fuel weight.
@@ -100,26 +103,26 @@ export default function WeightAndBalancePage() {
     return { flightFuelMass, actualDip };
   }
 
-  // --- Handlers for Input Updates ---
   const handleInputChange = (field: keyof WeightBalanceInputs, value: number) => {
     setInputs(prev => {
-      const updatedInputs = { ...prev, [field]: value };
-      // Reapply scenario logic if not in standard
-      return prev.scenario !== 'standard'
-        ? applyScenario(updatedInputs, prev.scenario)
-        : updatedInputs;
+        const updatedInputs = { ...prev, [field]: value };
+        // Only apply scenario logic if prev.scenario is defined and not 'standard'
+        if (prev.scenario && prev.scenario !== 'standard') {
+            return applyScenario(updatedInputs, prev.scenario);
+        }
+        return updatedInputs;
     });
-  };
+};
 
   const handleFlightTimeChange = (field: keyof WeightBalanceInputs['flightTime'], value: number) => {
     setInputs(prev => {
-      let updatedFlightTime = { ...prev.flightTime, [field]: value };
+      const updatedFlightTime = { ...prev.flightTime, [field]: value };
       // Auto-calculate contingency as 10% of trip time when trip changes
       if (field === 'trip') {
         updatedFlightTime.contingency = Number((value * 0.1).toFixed(2));
       }
-      let updatedInputs = { ...prev, flightTime: updatedFlightTime };
-      return prev.scenario !== 'standard'
+      const updatedInputs = { ...prev, flightTime: updatedFlightTime };
+      return prev.scenario && prev.scenario !== 'standard'
         ? applyScenario(updatedInputs, prev.scenario)
         : updatedInputs;
     });
@@ -191,6 +194,7 @@ export default function WeightAndBalancePage() {
                 <Input 
                   id="emptyWeight" 
                   type="number" 
+                  placeholder="Enter aircraft empty weight"
                   value={inputs.emptyWeight} 
                   onChange={(e) => handleInputChange('emptyWeight', parseFloat(e.target.value))} 
                 />
@@ -200,6 +204,7 @@ export default function WeightAndBalancePage() {
                 <Input 
                   id="emptyArm" 
                   type="number" 
+                  placeholder="Enter empty arm value"
                   value={inputs.emptyArm} 
                   onChange={(e) => handleInputChange('emptyArm', parseFloat(e.target.value))} 
                 />
@@ -226,6 +231,7 @@ export default function WeightAndBalancePage() {
                 <Input 
                   id="pilotWeight" 
                   type="number" 
+                  placeholder="Enter pilot weight in kg"
                   value={inputs.pilotWeight} 
                   onChange={(e) => handleInputChange('pilotWeight', parseFloat(e.target.value))} 
                 />
@@ -235,6 +241,7 @@ export default function WeightAndBalancePage() {
                 <Input 
                   id="passengerWeight" 
                   type="number" 
+                  placeholder="Enter passenger weight in kg"
                   value={inputs.passengerWeight} 
                   onChange={(e) => handleInputChange('passengerWeight', parseFloat(e.target.value))} 
                 />
@@ -247,6 +254,7 @@ export default function WeightAndBalancePage() {
                 <Input
                   id="baggageWeight"
                   type="number"
+                  placeholder="Enter baggage weight in kg"
                   value={inputs.baggageWeight}
                   onChange={(e) => handleInputChange('baggageWeight', parseFloat(e.target.value))}
                   disabled={inputs.scenario === 'minFuel'}
@@ -305,6 +313,7 @@ export default function WeightAndBalancePage() {
                 <Input 
                   id="tripTime" 
                   type="number" 
+                  placeholder="Enter trip time in hours"
                   value={inputs.flightTime.trip} 
                   onChange={(e) => handleFlightTimeChange('trip', parseFloat(e.target.value))}
                 />
@@ -314,6 +323,7 @@ export default function WeightAndBalancePage() {
                 <Input 
                   id="contingencyTime" 
                   type="number" 
+                  placeholder="Auto-calculated (10% of trip)"
                   value={inputs.flightTime.contingency} 
                   disabled
                 />
@@ -323,6 +333,7 @@ export default function WeightAndBalancePage() {
                 <Input 
                   id="alternateTime" 
                   type="number" 
+                  placeholder="Enter alternate time in hours"
                   value={inputs.flightTime.alternate} 
                   onChange={(e) => handleFlightTimeChange('alternate', parseFloat(e.target.value))}
                 />
@@ -332,6 +343,7 @@ export default function WeightAndBalancePage() {
                 <Input 
                   id="otherTime" 
                   type="number" 
+                  placeholder="Enter other time in hours"
                   value={inputs.flightTime.other} 
                   onChange={(e) => handleFlightTimeChange('other', parseFloat(e.target.value))}
                 />
@@ -341,6 +353,7 @@ export default function WeightAndBalancePage() {
                 <Input 
                   id="reserveTime" 
                   type="number" 
+                  placeholder="Enter reserve time in hours"
                   value={inputs.flightTime.reserve} 
                   onChange={(e) => handleFlightTimeChange('reserve', parseFloat(e.target.value))}
                 />
@@ -350,6 +363,7 @@ export default function WeightAndBalancePage() {
                 <Input 
                   id="taxiTime" 
                   type="number" 
+                  placeholder="Enter taxi fuel in liters"
                   value={inputs.flightTime.taxi} 
                   onChange={(e) => handleFlightTimeChange('taxi', parseFloat(e.target.value))}
                 />

@@ -5,21 +5,17 @@ import styles from './styles.module.css';
 import {
   PerformanceLayout,
   PerformanceInputSection,
-  PerformanceOutputSection,
-  FieldValue,
 } from '@/components/PerformanceLayout';
 import { PerformanceInputs } from '@/utils/performance';
 import { usePerformance } from '@/utils/usePerformance';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Progress } from "@/components/ui/progress";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
-import { CheckCircle2, AlertTriangle, Info } from "lucide-react";
+import { CheckCircle2, AlertTriangle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { FormField } from "@/components/FormField";
 import {
@@ -33,7 +29,38 @@ import { Separator } from "@/components/ui/separator";
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { validateRequiredFields, formatValidationErrors } from '@/utils/validation';
 
-function getCalculationProgress(results: any) {
+/* Commented out due to lint warnings - unused interface
+interface CalculationResults {
+  pressureAltitude?: {
+    result: number;
+  };
+  windCalculation?: {
+    part61: {
+      headwind: number | null;
+      tailwind: number | null;
+      crosswind: number;
+    };
+    part135: {
+      headwind: number | null;
+      tailwind: number | null;
+      crosswind: number;
+    };
+  };
+  takeoffPerformance?: {
+    groundRoll: number;
+    slopeCorrectedDistance: number;
+    finalTakeoffDistance: number;
+  };
+  landingPerformance?: {
+    groundRoll: number;
+    slopeCorrectedDistance: number;
+    finalLandingDistance: number;
+  };
+}
+*/
+
+/* Commented out due to lint warnings - unused function
+function getCalculationProgress(results: CalculationResults) {
   if (!results) return 0;
   let progress = 0;
   
@@ -54,12 +81,16 @@ function getCalculationProgress(results: any) {
   
   return progress;
 }
+*/
 
-function formatNumericDisplay(value: string | number | null | undefined, fallback: string = 'N/A'): string {
+// This function is currently unused but typed correctly
+/* Commented out due to lint warnings - unused function
+function formatNumericDisplay(value: string | number | null | undefined, fallback = 'N/A'): string {
   if (value === '' || value === null || value === undefined) return fallback;
   const num = Number(value);
   return isNaN(num) ? fallback : num.toFixed(2);
 }
+*/
 
 export default function PerformanceCalculator() {
   const [operationType, setOperationType] = useState<'takeoff' | 'landing'>('takeoff');
@@ -91,10 +122,12 @@ export default function PerformanceCalculator() {
   const [errors, setErrors] = useState<{[key: string]: string}>({});
   
   // Safe toFixed function to handle null/undefined values
-  const safeToFixed = (value: number | null | undefined, digits: number = 2): string => {
+  /* Commented out due to lint warnings - unused function
+  const safeToFixed = (value: number | null | undefined, digits = 2): string => {
     if (value === null || value === undefined) return '0.00';
     return value.toFixed(digits);
   };
+  */
   const { 
     isCalculating, 
     results, 
@@ -142,7 +175,7 @@ export default function PerformanceCalculator() {
   };
   
   // Update the handleInputChange function to handle empty string conversions
-  const handleInputChange = (field: string, value: any) => {
+  const handleInputChange = (field: string, value: string | number | boolean) => {
     // For numeric fields, allow empty string
     const processedValue = value === '' ? '' : value;
     
@@ -195,11 +228,14 @@ export default function PerformanceCalculator() {
     return isNaN(num) ? '0.00' : num.toFixed(2);
   };
 
-  const handleDisplayValue = (value: any): string => {
+  // This function is currently unused but typed correctly
+  /* Commented out due to lint warnings - unused function
+  const handleDisplayValue = (value: string | number | null | undefined): string => {
     if (value === null || value === undefined || value === '') return 'N/A';
     if (typeof value === 'number') return value.toFixed(2);
     return String(value);
   };
+  */
 
   return (
     <ErrorBoundary>
