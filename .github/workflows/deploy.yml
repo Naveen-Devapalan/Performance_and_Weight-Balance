@@ -44,9 +44,8 @@ jobs:
           cd client
           npm run build
           npm run export
-          ls -la out
       
-      - name: Verify Export Directory Contents
+      - name: List Export Directory Contents
         run: ls -la client/out
       
       - name: Upload artifact
