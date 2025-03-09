@@ -1,19 +1,18 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Setting the base path for GitHub Pages - this should match your repository name
-  basePath: process.env.NODE_ENV === 'production' ? '/Performance_and_Weight-Balance' : '',
+  // Vercel deployment doesn't require basePath and assetPrefix like GitHub Pages
+  // Only apply these when specifically targeting GitHub Pages
+  basePath: process.env.DEPLOYMENT_TARGET === 'github_pages' ? '/Performance_and_Weight-Balance' : '',
+  assetPrefix: process.env.DEPLOYMENT_TARGET === 'github_pages' ? '/Performance_and_Weight-Balance/' : '',
   
-  // Setting the asset prefix for GitHub Pages
-  assetPrefix: process.env.NODE_ENV === 'production' ? '/Performance_and_Weight-Balance/' : '',
+  // For Vercel, we don't need 'export' output
+  // Only use export for GitHub Pages
+  output: process.env.DEPLOYMENT_TARGET === 'github_pages' ? 'export' : undefined,
   
-  // Enable static exports for GitHub Pages
-  output: 'export',
-  
-  // Disable image optimization since it's not supported in static exports
+  // Enable image optimization for Vercel, disable for static exports
   images: {
-    unoptimized: true,
+    unoptimized: process.env.DEPLOYMENT_TARGET === 'github_pages',
   },
-
   reactStrictMode: true,
   swcMinify: true,
 };
