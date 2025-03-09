@@ -51,6 +51,15 @@ jobs:
           npm run build
           npm run export
       
+      - name: Adjust Exported Files for GitHub Pages
+        run: |
+          # If a basePath is set, Next.js exports files under a subdirectory
+          # Move them to the root of the export folder for GitHub Pages to serve correctly
+          if [ -d "client/out/Performance_and_Weight-Balance" ]; then
+            mv client/out/Performance_and_Weight-Balance/* client/out/
+            rm -rf client/out/Performance_and_Weight-Balance
+          fi
+      
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
