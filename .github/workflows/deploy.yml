@@ -45,13 +45,6 @@ jobs:
           npm run build
           npm run export
       
-      - name: Adjust Exported Files for GitHub Pages
-        run: |
-          if [ -d "client/out/Performance_and_Weight-Balance" ]; then
-            mv client/out/Performance_and_Weight-Balance/* client/out/
-            rm -rf client/out/Performance_and_Weight-Balance
-          fi
-      
       - name: List Export Directory Contents
         run: ls -la client/out
       
