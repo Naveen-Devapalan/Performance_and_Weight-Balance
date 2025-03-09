@@ -33,14 +33,14 @@ export function validateRequiredFields(inputs: PerformanceInputs): ValidationErr
   requiredFields.forEach(({ path, label }) => {
     // Using a safer approach to navigate deeply nested objects
     const pathParts = path.split('.');
-    let current: any = inputs;
+    let current: unknown = inputs;
     
     for (const part of pathParts) {
-      if (current === undefined || current === null) {
+      if (current === undefined || current === null || typeof current !== 'object') {
         current = undefined;
         break;
       }
-      current = current[part];
+      current = (current as Record<string, unknown>)[part];
     }
     
     if (current === '' || current === null || current === undefined) {
@@ -73,14 +73,14 @@ export function validateRequiredFields(inputs: PerformanceInputs): ValidationErr
   numericRanges.forEach(({ path, min, max, label, units }) => {
     // Using a safer approach to navigate deeply nested objects
     const pathParts = path.split('.');
-    let current: any = inputs;
+    let current: unknown = inputs;
     
     for (const part of pathParts) {
-      if (current === undefined || current === null) {
+      if (current === undefined || current === null || typeof current !== 'object') {
         current = undefined;
         break;
       }
-      current = current[part];
+      current = (current as Record<string, unknown>)[part];
     }
     
     const value = Number(current);

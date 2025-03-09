@@ -58,11 +58,6 @@ interface UsePerformanceReturn {
   retryCalculation: () => Promise<PerformanceResults | void>;
 }
 
-// Define a recursive type for nested objects
-type NestedObject = {
-  [key: string]: string | number | boolean | null | undefined | NestedObject;
-};
-
 export function usePerformance(): UsePerformanceReturn {
   const [isCalculating, setIsCalculating] = useState(false);
   const [results, setResults] = useState<PerformanceResults | null>(null);
@@ -88,13 +83,13 @@ export function usePerformance(): UsePerformanceReturn {
       const missingFields = requiredNumericFields.filter(field => {
         // Using a safer approach to navigate deeply nested objects
         const pathParts = field.path.split('.');
-        let current: any = inputs;
+        let current: unknown = inputs;
         
         for (const part of pathParts) {
-          if (current === undefined || current === null) {
+          if (current === undefined || current === null || typeof current !== 'object') {
             return true; // Missing field
           }
-          current = current[part];
+          current = (current as Record<string, unknown>)[part];
         }
         
         return current === '' || current === null || current === undefined || isNaN(Number(current));

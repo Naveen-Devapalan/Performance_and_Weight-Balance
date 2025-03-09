@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { Database } from 'sqlite3';
+import Database from 'better-sqlite3';
+import type { Database as DatabaseType } from 'better-sqlite3';
 import { PerformanceInputs } from '@/utils/performance';
 
 // Database types
@@ -66,71 +67,61 @@ function getTemperatureValue(temp: number, row: PerformanceRow): number {
 }
 
 // Helper function to get performance data with interpolation
-async function getInterpolatedPerformance(db: Database, pressureAltitude: number, temperature: number, isLanding: boolean) {
+function getInterpolatedPerformance(db: DatabaseType, pressureAltitude: number, temperature: number, isLanding: boolean) {
   const tableName = isLanding ? 'landing_distance' : 'takeoff_distance';
+  
+  // Find the closest pressure altitudes and their performance data
+  const rows = db.prepare(`
+    WITH PressureAltitudes AS (
+      SELECT DISTINCT pressure_altitude
+      FROM ${tableName}
+      WHERE pressure_altitude >= ? OR pressure_altitude <= ?
+      ORDER BY ABS(pressure_altitude - ?)
+      LIMIT 2
+    )
+    SELECT t.*
+    FROM ${tableName} t
+    INNER JOIN PressureAltitudes p ON t.pressure_altitude = p.pressure_altitude
+    ORDER BY t.pressure_altitude, t.condition
+  `).all(pressureAltitude, pressureAltitude, pressureAltitude) as PerformanceRow[];
 
-  return new Promise<{ groundRoll: number; distance50ft: number }>((resolve, reject) => {
-    // Find the closest pressure altitudes and their performance data
-    db.all<PerformanceRow>(
-      `WITH PressureAltitudes AS (
-         SELECT DISTINCT pressure_altitude
-         FROM ${tableName}
-         WHERE pressure_altitude >= ? OR pressure_altitude <= ?
-         ORDER BY ABS(pressure_altitude - ?)
-         LIMIT 2
-       )
-       SELECT t.*
-       FROM ${tableName} t
-       INNER JOIN PressureAltitudes p ON t.pressure_altitude = p.pressure_altitude
-       ORDER BY t.pressure_altitude, t.condition`,
-      [pressureAltitude, pressureAltitude, pressureAltitude],
-      (err, rows) => {
-        if (err) {
-          reject(err);
-          return;
-        }
+  if (rows.length === 0) {
+    throw new Error('No performance data available for the given conditions');
+  }
 
-        if (rows.length === 0) {
-          reject(new Error('No performance data available for the given conditions'));
-          return;
-        }
+  // Group data by pressure altitude and condition
+  const rowsByAltitude = rows.reduce((acc, row) => {
+    const alt = row.pressure_altitude;
+    if (!acc[alt]) acc[alt] = {};
+    acc[alt][row.condition] = row;
+    return acc;
+  }, {} as Record<number, Record<string, PerformanceRow>>);
 
-        // Group data by pressure altitude and condition
-        const rowsByAltitude = rows.reduce((acc, row) => {
-          const alt = row.pressure_altitude;
-          if (!acc[alt]) acc[alt] = {};
-          acc[alt][row.condition] = row;
-          return acc;
-        }, {} as Record<number, Record<string, PerformanceRow>>);
+  const altitudes = Object.keys(rowsByAltitude).map(Number);
+  const alt1 = altitudes[0];
+  const alt2 = altitudes[1] ?? alt1;
 
-        const altitudes = Object.keys(rowsByAltitude).map(Number);
-        const alt1 = altitudes[0];
-        const alt2 = altitudes[1] ?? alt1;
+  // Get ground roll values for both altitudes
+  const groundRoll1 = getTemperatureValue(temperature, rowsByAltitude[alt1]['Ground Roll']);
+  const groundRoll2 = alt1 === alt2 ? groundRoll1 : getTemperatureValue(temperature, rowsByAltitude[alt2]['Ground Roll']);
 
-        // Get ground roll values for both altitudes
-        const groundRoll1 = getTemperatureValue(temperature, rowsByAltitude[alt1]['Ground Roll']);
-        const groundRoll2 = alt1 === alt2 ? groundRoll1 : getTemperatureValue(temperature, rowsByAltitude[alt2]['Ground Roll']);
+  // Get 50ft distance values for both altitudes
+  const distance50ft1 = getTemperatureValue(temperature, rowsByAltitude[alt1]['At 50 ft AGL']);
+  const distance50ft2 = alt1 === alt2 ? distance50ft1 : getTemperatureValue(temperature, rowsByAltitude[alt2]['At 50 ft AGL']);
 
-        // Get 50ft distance values for both altitudes
-        const distance50ft1 = getTemperatureValue(temperature, rowsByAltitude[alt1]['At 50 ft AGL']);
-        const distance50ft2 = alt1 === alt2 ? distance50ft1 : getTemperatureValue(temperature, rowsByAltitude[alt2]['At 50 ft AGL']);
+  // Interpolate between altitudes if needed
+  const groundRoll = alt1 === alt2 
+    ? groundRoll1 
+    : interpolate(pressureAltitude, alt1, alt2, groundRoll1, groundRoll2);
 
-        // Interpolate between altitudes if needed
-        const groundRoll = alt1 === alt2 
-          ? groundRoll1 
-          : interpolate(pressureAltitude, alt1, alt2, groundRoll1, groundRoll2);
+  const distance50ft = alt1 === alt2 
+    ? distance50ft1 
+    : interpolate(pressureAltitude, alt1, alt2, distance50ft1, distance50ft2);
 
-        const distance50ft = alt1 === alt2 
-          ? distance50ft1 
-          : interpolate(pressureAltitude, alt1, alt2, distance50ft1, distance50ft2);
-
-        resolve({
-          groundRoll,
-          distance50ft
-        });
-      }
-    );
-  });
+  return {
+    groundRoll,
+    distance50ft
+  };
 }
 
 interface BaseData {
@@ -241,10 +232,12 @@ function calculateLandingDistances(baseData: BaseData, inputs: PerformanceInputs
 }
 
 export async function POST(request: Request) {
-  let db: Database | null = null;
+  let db: DatabaseType | null = null;
   try {
     const inputs: PerformanceInputs = await request.json();
-    db = new Database('src/data/performance_data.db');
+    
+    // Open database with readonly mode since we only need to read from it
+    db = new Database('src/data/performance_data.db', { readonly: true });
 
     // Calculate pressure altitude
     const pressureAltitude = calculatePressureAltitude(
@@ -257,7 +250,7 @@ export async function POST(request: Request) {
 
     // Get interpolated performance data
     const isLanding = inputs.departure.runway.includes('-landing');
-    const baseDistances = await getInterpolatedPerformance(
+    const baseDistances = getInterpolatedPerformance(
       db,
       pressureAltitude.result,
       Number(inputs.temperature),
@@ -275,7 +268,6 @@ export async function POST(request: Request) {
       takeoffPerformance: !isLanding ? performanceResults : null,
       landingPerformance: isLanding ? performanceResults : null
     });
-
   } catch (error) {
     console.error('Error in performance calculation:', error);
     return NextResponse.json(
@@ -284,11 +276,7 @@ export async function POST(request: Request) {
     );
   } finally {
     if (db) {
-      db.close((err) => {
-        if (err) {
-          console.error('Error closing database:', err);
-        }
-      });
+      db.close();
     }
   }
 }
