@@ -112,19 +112,20 @@ export function validatePerformanceInputs(inputs: PerformanceInputs): Performanc
  */
 export async function calculatePerformance(inputs: PerformanceInputs): Promise<PerformanceOutput> {
   try {
-    const response = await fetch('/api/performance', {
+    // Get base path from environment or use default (for GitHub Pages compatibility)
+    const basePath = process.env.NEXT_PUBLIC_BASE_PATH || '';
+    
+    const response = await fetch(`${basePath}/api/performance`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(validatePerformanceInputs(inputs)),
     });
-
     if (!response.ok) {
       const errorData = await response.json();
       throw new Error(errorData.error || 'Failed to calculate performance');
     }
-
     const data = await response.json();
     return data as PerformanceOutput;
   } catch (error) {

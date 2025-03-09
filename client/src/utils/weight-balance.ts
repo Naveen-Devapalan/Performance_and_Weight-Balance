@@ -336,3 +336,32 @@ export function applyScenario(
       };
   }
 }
+
+/**
+ * Calculates the weight and balance by making an API call.
+ */
+export async function calculateWeightBalanceAPI(inputs: WeightBalanceInputs): Promise<WeightBalanceOutput> {
+  try {
+    // Get base path from environment or use default (for GitHub Pages compatibility)
+    const basePath = process.env.NEXT_PUBLIC_BASE_PATH || '';
+    
+    const response = await fetch(`${basePath}/api/weight-balance`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(inputs),
+    });
+    
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Failed to calculate weight and balance');
+    }
+    
+    const data = await response.json();
+    return data as WeightBalanceOutput;
+  } catch (error) {
+    console.error('Error calculating weight and balance:', error);
+    throw error;
+  }
+}
