@@ -1,26 +1,21 @@
 name: Deploy to GitHub Pages
 
 on:
-  # Runs on pushes targeting the main branch
   push:
     branches: ["main"]
 
-  # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 
-# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
 permissions:
   contents: read
   pages: write
   id-token: write
 
-# Allow only one concurrent deployment
 concurrency:
   group: "pages"
   cancel-in-progress: true
 
 jobs:
-  # Build job
   build:
     runs-on: ubuntu-latest
     steps:
@@ -37,7 +32,6 @@ jobs:
       - name: Setup Pages
         uses: actions/configure-pages@v3
         with:
-          # This is the default, but specifying it explicitly for clarity
           static_site_generator: next
       
       - name: Install dependencies
@@ -53,19 +47,19 @@ jobs:
       
       - name: Adjust Exported Files for GitHub Pages
         run: |
-          # If a basePath is set, Next.js exports files under a subdirectory
-          # Move them to the root of the export folder for GitHub Pages to serve correctly
           if [ -d "client/out/Performance_and_Weight-Balance" ]; then
             mv client/out/Performance_and_Weight-Balance/* client/out/
             rm -rf client/out/Performance_and_Weight-Balance
           fi
+      
+      - name: List Export Directory Contents
+        run: ls -la client/out
       
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: ./client/out
 
-  # Deployment job
   deploy:
     environment:
       name: github-pages
