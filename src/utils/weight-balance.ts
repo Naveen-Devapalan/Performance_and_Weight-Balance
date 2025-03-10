@@ -1,20 +1,27 @@
 // Weight & Balance Utility Functions
+import {
+  WeightBalanceError,
+  WeightLimitError,
+  CGLimitError,
+  FuelCapacityError,
+  CalculationError
+} from './errors';
 
 export interface WeightBalanceInputs {
-  emptyWeight: number;
-  emptyArm?: number;
-  emptyMoment?: number;
-  pilotWeight: number;
-  passengerWeight: number;
-  fuelMass: number; // For standard scenario, fuelMass represents the actual flight fuel (i.e. actual dip - taxi fuel)
-  baggageWeight: number;
+  emptyWeight: number | string;
+  emptyArm?: number | string;
+  emptyMoment?: number | string;
+  pilotWeight: number | string;
+  passengerWeight: number | string;
+  fuelMass: number | string;
+  baggageWeight: number | string;
   flightTime: {
-    trip: number;
-    contingency: number;
-    alternate: number;
-    other: number;
-    reserve: number;
-    taxi: number;
+    trip: number | string;
+    contingency: number | string;
+    alternate: number | string;
+    other: number | string;
+    reserve: number | string;
+    taxi: number | string;
   };
   // Added scenario property for dropdown selection
   scenario?: ScenarioType;
@@ -84,22 +91,50 @@ export const CG_LIMITS = {
 export const TAXI_FUEL_LITRES = 3; // Constant value for taxi fuel in litres
 export const TAXI_FUEL_WEIGHT = Number((TAXI_FUEL_LITRES * CONVERSION_FACTORS.LITRES_TO_KG).toFixed(2)); // Constant taxi fuel weight (kg)
 
+function toNumber(value: string | number | undefined): number {
+  if (typeof value === 'string') {
+    const num = Number(value);
+    if (isNaN(num)) {
+      throw new CalculationError(`Invalid number value: ${value}`);
+    }
+    return num;
+  }
+  if (typeof value === 'undefined') {
+    throw new CalculationError('Required numeric value is undefined');
+  }
+  return value;
+}
+
 /**
  * Calculate the minimum fuel required (in litres) based on flight time.
  * This value represents the fuel dip, i.e. the total fuel needed including taxi fuel.
  */
 export function calculateMinimumFuel(inputs: WeightBalanceInputs): number {
-  const { flightTime } = inputs;
-  
-  // Per TDD 2.4: Trip + 10% Contingency + Alternate + Other + Reserve + Taxi
-  const tripFuel = flightTime.trip * CONVERSION_FACTORS.FLIGHT_TIME_TO_FUEL_RATE;
-  const contingencyFuel = tripFuel * 0.1; // 10% of trip fuel
-  const alternateFuel = flightTime.alternate * CONVERSION_FACTORS.FLIGHT_TIME_TO_FUEL_RATE;
-  const otherFuel = flightTime.other * CONVERSION_FACTORS.FLIGHT_TIME_TO_FUEL_RATE;
-  const reserveFuel = flightTime.reserve * CONVERSION_FACTORS.FLIGHT_TIME_TO_FUEL_RATE;
-  const taxiFuel = flightTime.taxi; // in litres
-  
-  return Number((tripFuel + contingencyFuel + alternateFuel + otherFuel + reserveFuel + taxiFuel).toFixed(2));
+  try {
+    const tripFuel = toNumber(inputs.flightTime.trip) * CONVERSION_FACTORS.FLIGHT_TIME_TO_FUEL_RATE;
+    const contingencyFuel = toNumber(inputs.flightTime.contingency) * CONVERSION_FACTORS.FLIGHT_TIME_TO_FUEL_RATE;
+    const alternateFuel = toNumber(inputs.flightTime.alternate) * CONVERSION_FACTORS.FLIGHT_TIME_TO_FUEL_RATE;
+    const otherFuel = toNumber(inputs.flightTime.other) * CONVERSION_FACTORS.FLIGHT_TIME_TO_FUEL_RATE;
+    const reserveFuel = toNumber(inputs.flightTime.reserve) * CONVERSION_FACTORS.FLIGHT_TIME_TO_FUEL_RATE;
+    const taxiFuel = toNumber(inputs.flightTime.taxi);
+
+    const totalFuel = tripFuel + contingencyFuel + alternateFuel + otherFuel + reserveFuel + taxiFuel;
+    
+    if (totalFuel > 120) { // 120L is max fuel capacity
+      throw new FuelCapacityError(
+        `Required fuel (${totalFuel.toFixed(1)}L) exceeds maximum fuel capacity of 120L`
+      );
+    }
+
+    return Number(totalFuel.toFixed(2));
+  } catch (error) {
+    if (error instanceof FuelCapacityError) {
+      throw error;
+    }
+    throw new CalculationError(
+      `Failed to calculate minimum fuel: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
 }
 
 /**
@@ -113,139 +148,171 @@ export function calculateMinimumFuel(inputs: WeightBalanceInputs): number {
  * For other scenarios, applyScenario should have computed fuelMass to be the actual flight fuel.
  */
 export function calculateWeightAndBalance(inputs: WeightBalanceInputs): WeightBalanceOutput {
-  const { 
-    emptyWeight, 
-    emptyArm = DEFAULT_ARMS.emptyWeight,
-    emptyMoment,
-    pilotWeight, 
-    passengerWeight, 
-    fuelMass, // represents actual flight fuel weight if set
-    baggageWeight,
-    flightTime 
-  } = inputs;
+  try {
+    const emptyWeight = toNumber(inputs.emptyWeight);
+    const emptyArm = toNumber(inputs.emptyArm) || DEFAULT_ARMS.emptyWeight;
+    const emptyMoment = inputs.emptyMoment ? toNumber(inputs.emptyMoment) : undefined;
+    const pilotWeight = toNumber(inputs.pilotWeight);
+    const passengerWeight = toNumber(inputs.passengerWeight);
+    const fuelMass = toNumber(inputs.fuelMass);
+    const baggageWeight = toNumber(inputs.baggageWeight);
 
-  // Compute minimum fuel required (actual dip) from flightTime.
-  const minimumFuelLitres = calculateMinimumFuel(inputs); // This includes taxi fuel.
-  const minimumFuelWeight = Number((minimumFuelLitres * CONVERSION_FACTORS.LITRES_TO_KG).toFixed(2));
-
-  // Taxi fuel (from flightTime input)
-  const taxiFuelLitres = flightTime.taxi;
-  const taxiFuelWeight = Number((taxiFuelLitres * CONVERSION_FACTORS.LITRES_TO_KG).toFixed(2));
-
-  // Determine the actual flight fuel:
-  // If fuelMass is provided (non-zero) by a scenario (e.g. minFuel or maxFuel),
-  // use it; otherwise (standard scenario) compute it as (minimum fuel - taxi fuel).
-  const actualFlightFuelWeight = fuelMass > 0 ? fuelMass : Number((minimumFuelWeight - taxiFuelWeight).toFixed(2));
-  const actualFlightFuelLitres = Number((actualFlightFuelWeight / CONVERSION_FACTORS.LITRES_TO_KG).toFixed(2));
-
-  // The actual dip is always the minimum fuel (includes taxi fuel).
-  const actualDipWeight = minimumFuelWeight;
-  const actualDipLitres = minimumFuelLitres;
-
-  // Burn off weight is computed based on trip fuel only.
-  const burnOffWeight = Number((flightTime.trip * CONVERSION_FACTORS.FLIGHT_TIME_TO_FUEL_RATE * CONVERSION_FACTORS.LITRES_TO_KG).toFixed(2));
-  const burnOffLitres = Number((burnOffWeight / CONVERSION_FACTORS.LITRES_TO_KG).toFixed(2));
-
-  // Calculate empty moment if not provided.
-  const calculatedEmptyMoment = emptyMoment || Number((emptyWeight * emptyArm).toFixed(2));
-
-  // Weight and Balance items.
-  const weightBalanceItems = [
-    { 
-      name: 'Empty Weight', 
-      weight: emptyWeight, 
-      arm: emptyArm, 
-      moment: calculatedEmptyMoment
-    },
-    { 
-      name: 'Pilot & Passenger', 
-      weight: pilotWeight + passengerWeight, 
-      arm: DEFAULT_ARMS.pilotPassenger, 
-      moment: Number(((pilotWeight + passengerWeight) * DEFAULT_ARMS.pilotPassenger).toFixed(2)) 
-    },
-    { 
-      name: 'Fuel Mass', 
-      weight: actualFlightFuelWeight, 
-      arm: DEFAULT_ARMS.fuel, 
-      moment: Number((actualFlightFuelWeight * DEFAULT_ARMS.fuel).toFixed(2))
-    },
-    { 
-      name: 'Baggage', 
-      weight: baggageWeight, 
-      arm: DEFAULT_ARMS.baggage, 
-      moment: Number((baggageWeight * DEFAULT_ARMS.baggage).toFixed(2)),
-      max: CG_LIMITS.MAX_BAGGAGE_WEIGHT
+    // Validate baggage weight
+    if (baggageWeight > CG_LIMITS.MAX_BAGGAGE_WEIGHT) {
+      throw new WeightLimitError(
+        `Baggage weight (${baggageWeight.toFixed(1)} kg) exceeds maximum limit of ${CG_LIMITS.MAX_BAGGAGE_WEIGHT} kg`
+      );
     }
-  ];
 
-  const takeoffWeight = Number((
-    emptyWeight + 
-    pilotWeight + 
-    passengerWeight + 
-    actualFlightFuelWeight + 
-    baggageWeight
-  ).toFixed(2));
+    const flightTime = {
+      trip: toNumber(inputs.flightTime.trip),
+      contingency: toNumber(inputs.flightTime.contingency),
+      alternate: toNumber(inputs.flightTime.alternate),
+      other: toNumber(inputs.flightTime.other),
+      reserve: toNumber(inputs.flightTime.reserve),
+      taxi: toNumber(inputs.flightTime.taxi)
+    };
 
-  const landingWeight = Number((takeoffWeight - burnOffWeight).toFixed(2));
+    // Compute minimum fuel required (actual dip) from flightTime.
+    const minimumFuelLitres = calculateMinimumFuel(inputs); // This includes taxi fuel.
+    const minimumFuelWeight = Number((minimumFuelLitres * CONVERSION_FACTORS.LITRES_TO_KG).toFixed(2));
 
-  const totalMoment = weightBalanceItems.reduce((sum, item) => sum + item.moment, 0);
-  const centerOfGravity = Number((totalMoment / takeoffWeight).toFixed(3));
-  const isWithinLimits = validateCGLimits(centerOfGravity) && takeoffWeight <= CG_LIMITS.MAX_TAKEOFF_WEIGHT;
+    // Taxi fuel (from flightTime input)
+    const taxiFuelLitres = flightTime.taxi;
+    const taxiFuelWeight = Number((taxiFuelLitres * CONVERSION_FACTORS.LITRES_TO_KG).toFixed(2));
 
-  return {
-    minimumFuelRequired: {
-      time: flightTime.trip + flightTime.contingency + flightTime.alternate + flightTime.other + flightTime.reserve,
-      litres: actualDipLitres,
-      weight: actualDipWeight
-    },
-    actualFuelState: {
-      actualDip: {
-        litres: actualDipLitres,
-        weight: actualDipWeight
+    // Determine the actual flight fuel:
+    // If fuelMass is provided (non-zero) by a scenario (e.g. minFuel or maxFuel),
+    // use it; otherwise (standard scenario) compute it as (minimum fuel - taxi fuel).
+    const actualFlightFuelWeight = fuelMass > 0 ? fuelMass : Number((minimumFuelWeight - taxiFuelWeight).toFixed(2));
+    const actualFlightFuelLitres = Number((actualFlightFuelWeight / CONVERSION_FACTORS.LITRES_TO_KG).toFixed(2));
+
+    // The actual dip is always the minimum fuel (includes taxi fuel).
+
+    // Burn off weight is computed based on trip fuel only.
+    const burnOffWeight = Number((flightTime.trip * CONVERSION_FACTORS.FLIGHT_TIME_TO_FUEL_RATE * CONVERSION_FACTORS.LITRES_TO_KG).toFixed(2));
+    const burnOffLitres = Number((burnOffWeight / CONVERSION_FACTORS.LITRES_TO_KG).toFixed(2));
+
+    // Calculate empty moment if not provided.
+    const calculatedEmptyMoment = emptyMoment || Number((emptyWeight * emptyArm).toFixed(2));
+
+    // Weight and Balance items.
+    const weightBalanceItems = [
+      { 
+        name: 'Empty Weight', 
+        weight: emptyWeight, 
+        arm: emptyArm, 
+        moment: calculatedEmptyMoment
       },
-      taxi: {
-        litres: taxiFuelLitres,
-        weight: taxiFuelWeight
+      { 
+        name: 'Pilot & Passenger', 
+        weight: pilotWeight + passengerWeight, 
+        arm: DEFAULT_ARMS.pilotPassenger, 
+        moment: Number(((pilotWeight + passengerWeight) * DEFAULT_ARMS.pilotPassenger).toFixed(2)) 
       },
-      actualFlightFuel: {
-        litres: actualFlightFuelLitres,
-        weight: actualFlightFuelWeight
+      { 
+        name: 'Fuel Mass', 
+        weight: actualFlightFuelWeight, 
+        arm: DEFAULT_ARMS.fuel, 
+        moment: Number((actualFlightFuelWeight * DEFAULT_ARMS.fuel).toFixed(2))
       },
-      burnOff: {
-        litres: burnOffLitres,
-        weight: burnOffWeight
+      { 
+        name: 'Baggage', 
+        weight: baggageWeight, 
+        arm: DEFAULT_ARMS.baggage, 
+        moment: Number((baggageWeight * DEFAULT_ARMS.baggage).toFixed(2)),
+        max: CG_LIMITS.MAX_BAGGAGE_WEIGHT
       }
-    },
-    weightAndBalance: {
-      items: [
-        ...weightBalanceItems,
-        { 
-          name: 'Take Off Weight', 
-          weight: takeoffWeight, 
-          arm: centerOfGravity, 
-          moment: totalMoment,
-          max: CG_LIMITS.MAX_TAKEOFF_WEIGHT
-        },
-        { 
-          name: 'Burn Off', 
-          weight: burnOffWeight, 
-          arm: DEFAULT_ARMS.fuel, 
-          moment: -Number((burnOffWeight * DEFAULT_ARMS.fuel).toFixed(2)) 
-        },
-        { 
-          name: 'Landing Weight', 
-          weight: landingWeight, 
-          arm: Number(((totalMoment - (burnOffWeight * DEFAULT_ARMS.fuel)) / landingWeight).toFixed(3)), 
-          moment: totalMoment - (burnOffWeight * DEFAULT_ARMS.fuel),
-          max: CG_LIMITS.MAX_TAKEOFF_WEIGHT
-        }
-      ],
-      takeoffWeight,
-      landingWeight,
-      centerOfGravity,
-      isWithinLimits
+    ];
+
+    const takeoffWeight = Number((
+      emptyWeight + 
+      pilotWeight + 
+      passengerWeight + 
+      actualFlightFuelWeight + 
+      baggageWeight
+    ).toFixed(2));
+
+    // Validate takeoff weight
+    if (takeoffWeight > CG_LIMITS.MAX_TAKEOFF_WEIGHT) {
+      throw new WeightLimitError(
+        `Takeoff weight (${takeoffWeight.toFixed(1)} kg) exceeds maximum limit of ${CG_LIMITS.MAX_TAKEOFF_WEIGHT} kg`
+      );
     }
-  };
+
+    const landingWeight = Number((takeoffWeight - burnOffWeight).toFixed(2));
+    const totalMoment = weightBalanceItems.reduce((sum, item) => sum + item.moment, 0);
+    const centerOfGravity = Number((totalMoment / takeoffWeight).toFixed(3));
+
+    // Validate CG
+    if (!validateCGLimits(centerOfGravity)) {
+      throw new CGLimitError(
+        `Center of gravity (${centerOfGravity.toFixed(3)} m) is outside allowed limits (${CG_LIMITS.FORWARD}-${CG_LIMITS.AFT} m)`
+      );
+    }
+
+    return {
+      minimumFuelRequired: {
+        time: flightTime.trip + flightTime.contingency + flightTime.alternate + flightTime.other + flightTime.reserve,
+        litres: minimumFuelLitres,
+        weight: minimumFuelWeight
+      },
+      actualFuelState: {
+        actualDip: {
+          litres: minimumFuelLitres,
+          weight: minimumFuelWeight
+        },
+        taxi: {
+          litres: taxiFuelLitres,
+          weight: taxiFuelWeight
+        },
+        actualFlightFuel: {
+          litres: actualFlightFuelLitres,
+          weight: actualFlightFuelWeight
+        },
+        burnOff: {
+          litres: burnOffLitres,
+          weight: burnOffWeight
+        }
+      },
+      weightAndBalance: {
+        items: [
+          ...weightBalanceItems,
+          { 
+            name: 'Take Off Weight', 
+            weight: takeoffWeight, 
+            arm: centerOfGravity, 
+            moment: totalMoment,
+            max: CG_LIMITS.MAX_TAKEOFF_WEIGHT
+          },
+          { 
+            name: 'Burn Off', 
+            weight: burnOffWeight, 
+            arm: DEFAULT_ARMS.fuel, 
+            moment: -Number((burnOffWeight * DEFAULT_ARMS.fuel).toFixed(2)) 
+          },
+          { 
+            name: 'Landing Weight', 
+            weight: landingWeight, 
+            arm: Number(((totalMoment - (burnOffWeight * DEFAULT_ARMS.fuel)) / landingWeight).toFixed(3)), 
+            moment: totalMoment - (burnOffWeight * DEFAULT_ARMS.fuel),
+            max: CG_LIMITS.MAX_TAKEOFF_WEIGHT
+          }
+        ],
+        takeoffWeight,
+        landingWeight,
+        centerOfGravity,
+        isWithinLimits: validateCGLimits(centerOfGravity) && takeoffWeight <= CG_LIMITS.MAX_TAKEOFF_WEIGHT
+      }
+    };
+  } catch (error) {
+    if (error instanceof WeightBalanceError) {
+      throw error;
+    }
+    throw new CalculationError(
+      `Failed to calculate weight and balance: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
 }
 
 export function validateCGLimits(cg: number): boolean {
@@ -288,13 +355,12 @@ export function applyScenario(
     case 'minFuel': {
       const minFuelLitres = calculateMinimumFuel(updatedInputs);
       const minFuelWeight = Number((minFuelLitres * CONVERSION_FACTORS.LITRES_TO_KG).toFixed(2));
-      // actual flight fuel is dip minus constant taxi fuel weight
       const actualFlightFuel = Number((minFuelWeight - TAXI_FUEL_WEIGHT).toFixed(2));
 
       const baseWeight = Number((
-        updatedInputs.emptyWeight +
-        updatedInputs.pilotWeight +
-        updatedInputs.passengerWeight +
+        toNumber(updatedInputs.emptyWeight) +
+        toNumber(updatedInputs.pilotWeight) +
+        toNumber(updatedInputs.passengerWeight) +
         actualFlightFuel
       ).toFixed(2));
 

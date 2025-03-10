@@ -142,11 +142,19 @@ export default function PerformanceCalculator() {
     
     // Additional validation for TODA and LDA
     if (operationType === 'takeoff' && (!inputs.departure.toda || inputs.departure.toda === '')) {
-      validationErrors.push({ field: 'toda', message: 'TODA is required for takeoff calculations' });
+      validationErrors.push({ 
+        field: 'toda', 
+        message: 'TODA is required for takeoff calculations',
+        type: 'error'
+      });
     }
     
     if (operationType === 'landing' && (!inputs.departure.lda || inputs.departure.lda === '')) {
-      validationErrors.push({ field: 'lda', message: 'LDA is required for landing calculations' });
+      validationErrors.push({ 
+        field: 'lda', 
+        message: 'LDA is required for landing calculations',
+        type: 'error'
+      });
     }
     
     const formattedErrors = formatValidationErrors(validationErrors);

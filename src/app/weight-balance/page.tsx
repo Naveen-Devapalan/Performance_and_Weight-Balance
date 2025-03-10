@@ -30,30 +30,41 @@ import { validateWeightBalanceInputs } from '@/utils/validation';
 import styles from './styles.module.css';
 import LoadingSpinner from '@/components/LoadingSpinner';
 
+// Helper function to safely convert string | number to number
+const toNumber = (value: string | number): number => {
+  if (typeof value === 'string') {
+    return Number(value) || 0;
+  }
+  return value || 0;
+};
+
 export default function WeightAndBalancePage() {
   // Consolidate scenario into inputs state
   const [inputs, setInputs] = useState<WeightBalanceInputs>({
-    emptyWeight: 0,
-    emptyArm: 0,
-    pilotWeight: 0,
-    passengerWeight: 0,
-    fuelMass: 0, // will be set based on calculations (actual flight fuel)
-    baggageWeight: 0,
+    emptyWeight: '',
+    emptyArm: '',
+    pilotWeight: '',
+    passengerWeight: '',
+    fuelMass: '', // will be set based on calculations (actual flight fuel)
+    baggageWeight: '',
     flightTime: {
-      trip: 0,
-      contingency: 0,
-      alternate: 0,
-      other: 0,
-      reserve: 0,
-      taxi: 0
+      trip: '',
+      contingency: '',
+      alternate: '',
+      other: '',
+      reserve: '',
+      taxi: ''
     },
     scenario: 'standard' as ScenarioType
   });
 
   const [results, setResults] = useState<WeightBalanceOutput | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [maxAllowableBaggage] = useState<number | null>(null);
+
+  // Update error state to handle multiple errors
+  const [errors, setErrors] = useState<{[key: string]: string}>({});
+  const [globalError, setGlobalError] = useState<string | null>(null);
 
   // --- Helper Functions for Fuel Calculations ---
   // Returns an object with both the flight fuel mass (fuel that will be used during flight)
@@ -62,13 +73,13 @@ export default function WeightAndBalancePage() {
     const actualDipLitres = calculateMinimumFuel(inputs);
     const actualDip = Number((actualDipLitres * CONVERSION_FACTORS.LITRES_TO_KG).toFixed(2));
     // In standard scenario, actual flight fuel equals the dip minus taxi fuel
-    const flightFuelMass = Number(((actualDipLitres - inputs.flightTime.taxi) * CONVERSION_FACTORS.LITRES_TO_KG).toFixed(2));
+    const flightFuelMass = Number(((actualDipLitres - toNumber(inputs.flightTime.taxi)) * CONVERSION_FACTORS.LITRES_TO_KG).toFixed(2));
     return { flightFuelMass, actualDip };
   }
 
   function computeMaxFuel(inputs: WeightBalanceInputs): { flightFuelMass: number, actualDip: number } {
     const { emptyWeight, pilotWeight, passengerWeight, baggageWeight } = inputs;
-    const totalStatic = emptyWeight + pilotWeight + passengerWeight + baggageWeight;
+    const totalStatic = toNumber(emptyWeight) + toNumber(pilotWeight) + toNumber(passengerWeight) + toNumber(baggageWeight);
     const remaining = CG_LIMITS.MAX_TAKEOFF_WEIGHT - totalStatic;
     if (remaining <= 0) {
       throw new Error("Operation not feasible: total weight exceeds maximum takeoff weight.");
@@ -85,13 +96,13 @@ export default function WeightAndBalancePage() {
     // In maxFuel scenario, the computed fuel is the flight fuel available.
     const flightFuelMass = Number((fuelLitres * CONVERSION_FACTORS.LITRES_TO_KG).toFixed(2));
     // The actual dip (fuel measured on the dipstick) is flight fuel plus taxi fuel weight.
-    const taxiFuelWeight = Number((inputs.flightTime.taxi * CONVERSION_FACTORS.LITRES_TO_KG).toFixed(2));
+    const taxiFuelWeight = Number((toNumber(inputs.flightTime.taxi) * CONVERSION_FACTORS.LITRES_TO_KG).toFixed(2));
     const actualDip = flightFuelMass + taxiFuelWeight;
     return { flightFuelMass, actualDip };
   }
 
   function computeMinFuel(inputs: WeightBalanceInputs): { flightFuelMass: number, actualDip: number } {
-    if (inputs.scenario === 'minFuel' && inputs.baggageWeight <= 0) {
+    if (inputs.scenario === 'minFuel' && toNumber(inputs.baggageWeight) <= 0) {
       throw new Error("Takeoff weight above 650 Kgs. Operation not feasible.");
     }
     
@@ -104,17 +115,25 @@ export default function WeightAndBalancePage() {
   }
 
   const handleInputChange = (field: keyof WeightBalanceInputs, value: number) => {
-    setInputs(prev => {
-        const updatedInputs = { ...prev, [field]: value };
-        // Only apply scenario logic if prev.scenario is defined and not 'standard'
-        if (prev.scenario && prev.scenario !== 'standard') {
-            return applyScenario(updatedInputs, prev.scenario);
-        }
-        return updatedInputs;
+    setErrors(prev => {
+      const { [field]: removed, ...rest } = prev;
+      return rest;
     });
-};
+    
+    setInputs(prev => {
+      const updatedInputs = { ...prev, [field]: value };
+      return prev.scenario && prev.scenario !== 'standard'
+        ? applyScenario(updatedInputs, prev.scenario)
+        : updatedInputs;
+    });
+  };
 
   const handleFlightTimeChange = (field: keyof WeightBalanceInputs['flightTime'], value: number) => {
+    setErrors(prev => {
+      const { [`flightTime.${field}`]: removed, ...rest } = prev;
+      return rest;
+    });
+
     setInputs(prev => {
       const updatedFlightTime = { ...prev.flightTime, [field]: value };
       // Auto-calculate contingency as 10% of trip time when trip changes
@@ -135,51 +154,72 @@ export default function WeightAndBalancePage() {
   // --- Calculation Handler ---
   const handleCalculate = async () => {
     setLoading(true);
-    setError(null);
+    setErrors({});
+    setGlobalError(null);
 
     try {
       let computedFuel: { flightFuelMass: number, actualDip: number };
 
-      if (inputs.scenario === 'maxFuel') {
-        computedFuel = computeMaxFuel(inputs);
-      } else if (inputs.scenario === 'minFuel') {
-        computedFuel = computeMinFuel(inputs);
-      } else {
-        computedFuel = computeStandardFuel(inputs);
-      }
-
-      // Pass both the actual flight fuel (fuelMass) and the actual dip to the API.
-      const finalInputs = { ...inputs, fuelMass: computedFuel.flightFuelMass, actualDip: computedFuel.actualDip };
-
-      // Run validations
-      const validationErrors = validateWeightBalanceInputs(finalInputs);
-      if (validationErrors.length > 0) {
-        setError(validationErrors.map(err => err.message).join(', '));
+      try {
+        if (inputs.scenario === 'maxFuel') {
+          computedFuel = computeMaxFuel(inputs);
+        } else if (inputs.scenario === 'minFuel') {
+          computedFuel = computeMinFuel(inputs);
+        } else {
+          computedFuel = computeStandardFuel(inputs);
+        }
+      } catch (fuelError) {
+        setGlobalError(fuelError instanceof Error ? fuelError.message : 'Failed to compute fuel requirements');
         setLoading(false);
         return;
       }
 
-      // API call for further processing
+      const finalInputs = { ...inputs, fuelMass: computedFuel.flightFuelMass, actualDip: computedFuel.actualDip };
+
       const response = await fetch('/api/weight-balance', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(finalInputs)
       });
 
+      const data = await response.json();
+
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Calculation failed');
+        if (data.code === 'VALIDATION_ERROR' && data.errors) {
+          // Handle field-specific validation errors
+          const errorMap = data.errors.reduce((acc: {[key: string]: string}, err: any) => {
+            if (err.type === 'warning') {
+              // Show warnings in the UI but don't prevent calculation
+              setGlobalError(err.message);
+            } else {
+              acc[err.field] = err.message;
+            }
+            return acc;
+          }, {});
+          setErrors(errorMap);
+          
+          if (Object.keys(errorMap).length > 0) {
+            throw new Error('Please correct the validation errors and try again.');
+          }
+        } else if (data.code === 'CALCULATION_ERROR') {
+          throw new Error(`Calculation failed: ${data.error}`);
+        } else {
+          throw new Error(data.error || 'An error occurred during calculation');
+        }
       }
 
-      const data = await response.json();
       setResults(data);
     } catch (error) {
       console.error('Error:', error);
-      setError(error instanceof Error ? error.message : 'An unknown error occurred');
+      setGlobalError(error instanceof Error ? error.message : 'An unknown error occurred');
     } finally {
       setLoading(false);
     }
   };
+
+  // Helper to check if a field has an error
+  const hasError = (field: string) => !!errors[field];
+  const getError = (field: string) => errors[field];
 
   // --- Render UI ---
   return (
@@ -196,8 +236,13 @@ export default function WeightAndBalancePage() {
                   type="number" 
                   placeholder="Enter aircraft empty weight"
                   value={inputs.emptyWeight} 
-                  onChange={(e) => handleInputChange('emptyWeight', parseFloat(e.target.value))} 
+                  onChange={(e) => handleInputChange('emptyWeight', parseFloat(e.target.value))}
+                  className={hasError('emptyWeight') ? 'border-red-500' : ''}
+                  aria-invalid={hasError('emptyWeight')}
                 />
+                {hasError('emptyWeight') && (
+                  <p className="mt-1 text-sm text-red-500">{getError('emptyWeight')}</p>
+                )}
               </div>
               <div>
                 <Label htmlFor="emptyArm">Empty Arm (m)</Label>
@@ -207,7 +252,12 @@ export default function WeightAndBalancePage() {
                   placeholder="Enter empty arm value"
                   value={inputs.emptyArm} 
                   onChange={(e) => handleInputChange('emptyArm', parseFloat(e.target.value))} 
+                  className={hasError('emptyArm') ? 'border-red-500' : ''}
+                  aria-invalid={hasError('emptyArm')}
                 />
+                {hasError('emptyArm') && (
+                  <p className="mt-1 text-sm text-red-500">{getError('emptyArm')}</p>
+                )}
               </div>
               <div>
                 <Label htmlFor="emptyMoment">Empty Moment (kg·m) (optional)</Label>
@@ -216,7 +266,12 @@ export default function WeightAndBalancePage() {
                   type="number" 
                   placeholder="Will be calculated if not provided" 
                   onChange={(e) => handleInputChange('emptyMoment', parseFloat(e.target.value))} 
+                  className={hasError('emptyMoment') ? 'border-red-500' : ''}
+                  aria-invalid={hasError('emptyMoment')}
                 />
+                {hasError('emptyMoment') && (
+                  <p className="mt-1 text-sm text-red-500">{getError('emptyMoment')}</p>
+                )}
               </div>
             </div>
           </Card>
@@ -234,7 +289,12 @@ export default function WeightAndBalancePage() {
                   placeholder="Enter pilot weight in kg"
                   value={inputs.pilotWeight} 
                   onChange={(e) => handleInputChange('pilotWeight', parseFloat(e.target.value))} 
+                  className={hasError('pilotWeight') ? 'border-red-500' : ''}
+                  aria-invalid={hasError('pilotWeight')}
                 />
+                {hasError('pilotWeight') && (
+                  <p className="mt-1 text-sm text-red-500">{getError('pilotWeight')}</p>
+                )}
               </div>
               <div>
                 <Label htmlFor="passengerWeight">Passenger Weight (kg)</Label>
@@ -244,7 +304,12 @@ export default function WeightAndBalancePage() {
                   placeholder="Enter passenger weight in kg"
                   value={inputs.passengerWeight} 
                   onChange={(e) => handleInputChange('passengerWeight', parseFloat(e.target.value))} 
+                  className={hasError('passengerWeight') ? 'border-red-500' : ''}
+                  aria-invalid={hasError('passengerWeight')}
                 />
+                {hasError('passengerWeight') && (
+                  <p className="mt-1 text-sm text-red-500">{getError('passengerWeight')}</p>
+                )}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="baggageWeight">
@@ -258,8 +323,12 @@ export default function WeightAndBalancePage() {
                   value={inputs.baggageWeight}
                   onChange={(e) => handleInputChange('baggageWeight', parseFloat(e.target.value))}
                   disabled={inputs.scenario === 'minFuel'}
-                  className={inputs.scenario === 'minFuel' ? 'bg-gray-100' : ''}
+                  className={`${inputs.scenario === 'minFuel' ? 'bg-gray-100' : ''} ${hasError('baggageWeight') ? 'border-red-500' : ''}`}
+                  aria-invalid={hasError('baggageWeight')}
                 />
+                {hasError('baggageWeight') && (
+                  <p className="mt-1 text-sm text-red-500">{getError('baggageWeight')}</p>
+                )}
                 {inputs.scenario === 'minFuel' && maxAllowableBaggage !== null && (
                   <p className="text-sm text-muted-foreground mt-1">
                     Maximum allowable baggage: {maxAllowableBaggage.toFixed(1)} kg
@@ -316,7 +385,12 @@ export default function WeightAndBalancePage() {
                   placeholder="Enter trip time in hours"
                   value={inputs.flightTime.trip} 
                   onChange={(e) => handleFlightTimeChange('trip', parseFloat(e.target.value))}
+                  className={hasError('flightTime.trip') ? 'border-red-500' : ''}
+                  aria-invalid={hasError('flightTime.trip')}
                 />
+                {hasError('flightTime.trip') && (
+                  <p className="mt-1 text-sm text-red-500">{getError('flightTime.trip')}</p>
+                )}
               </div>
               <div>
                 <Label htmlFor="contingencyTime">Contingency (hrs)</Label>
@@ -326,7 +400,12 @@ export default function WeightAndBalancePage() {
                   placeholder="Auto-calculated (10% of trip)"
                   value={inputs.flightTime.contingency} 
                   disabled
+                  className={hasError('flightTime.contingency') ? 'border-red-500' : ''}
+                  aria-invalid={hasError('flightTime.contingency')}
                 />
+                {hasError('flightTime.contingency') && (
+                  <p className="mt-1 text-sm text-red-500">{getError('flightTime.contingency')}</p>
+                )}
               </div>
               <div>
                 <Label htmlFor="alternateTime">Alternate (hrs)</Label>
@@ -336,7 +415,12 @@ export default function WeightAndBalancePage() {
                   placeholder="Enter alternate time in hours"
                   value={inputs.flightTime.alternate} 
                   onChange={(e) => handleFlightTimeChange('alternate', parseFloat(e.target.value))}
+                  className={hasError('flightTime.alternate') ? 'border-red-500' : ''}
+                  aria-invalid={hasError('flightTime.alternate')}
                 />
+                {hasError('flightTime.alternate') && (
+                  <p className="mt-1 text-sm text-red-500">{getError('flightTime.alternate')}</p>
+                )}
               </div>
               <div>
                 <Label htmlFor="otherTime">Other (hrs)</Label>
@@ -346,7 +430,12 @@ export default function WeightAndBalancePage() {
                   placeholder="Enter other time in hours"
                   value={inputs.flightTime.other} 
                   onChange={(e) => handleFlightTimeChange('other', parseFloat(e.target.value))}
+                  className={hasError('flightTime.other') ? 'border-red-500' : ''}
+                  aria-invalid={hasError('flightTime.other')}
                 />
+                {hasError('flightTime.other') && (
+                  <p className="mt-1 text-sm text-red-500">{getError('flightTime.other')}</p>
+                )}
               </div>
               <div>
                 <Label htmlFor="reserveTime">Reserve (hrs)</Label>
@@ -356,7 +445,12 @@ export default function WeightAndBalancePage() {
                   placeholder="Enter reserve time in hours"
                   value={inputs.flightTime.reserve} 
                   onChange={(e) => handleFlightTimeChange('reserve', parseFloat(e.target.value))}
+                  className={hasError('flightTime.reserve') ? 'border-red-500' : ''}
+                  aria-invalid={hasError('flightTime.reserve')}
                 />
+                {hasError('flightTime.reserve') && (
+                  <p className="mt-1 text-sm text-red-500">{getError('flightTime.reserve')}</p>
+                )}
               </div>
               <div>
                 <Label htmlFor="taxiTime">Taxi Fuel (L)</Label>
@@ -366,7 +460,12 @@ export default function WeightAndBalancePage() {
                   placeholder="Enter taxi fuel in liters"
                   value={inputs.flightTime.taxi} 
                   onChange={(e) => handleFlightTimeChange('taxi', parseFloat(e.target.value))}
+                  className={hasError('flightTime.taxi') ? 'border-red-500' : ''}
+                  aria-invalid={hasError('flightTime.taxi')}
                 />
+                {hasError('flightTime.taxi') && (
+                  <p className="mt-1 text-sm text-red-500">{getError('flightTime.taxi')}</p>
+                )}
               </div>
             </div>
           </Card>
@@ -383,43 +482,31 @@ export default function WeightAndBalancePage() {
             variant="outline" 
             onClick={() => {
               setResults(null);
-              setError(null);
+              setGlobalError(null);
+              setErrors({});
             }}
           >
             Reset
           </Button>
         </div>
 
-        {error && (
+        {(globalError || Object.keys(errors).length > 0) && (
           <Alert variant="destructive" className={styles.errorAlert}>
             <AlertTriangle className="h-4 w-4" />
             <AlertTitle>
-              {inputs.scenario === 'maxFuel' ? 'Fuel Planning Error' : 'Calculation Error'}
+              {inputs.scenario === 'maxFuel' ? 'Fuel Planning Error' : 'Validation Error'}
             </AlertTitle>
-            <AlertDescription className="mt-2">
-              <div className="space-y-2">
-                <p>{error}</p>
-                {inputs.scenario === 'maxFuel' && (
-                  <div className="mt-2 text-sm">
-                    <p className="font-semibold">Current values:</p>
-                    <ul className="list-disc pl-4 mt-1">
-                      <li>Total payload weight: {(
-                        inputs.pilotWeight + 
-                        inputs.passengerWeight + 
-                        inputs.baggageWeight
-                      ).toFixed(1)} kg</li>
-                      <li>Minimum fuel required: {calculateMinimumFuel(inputs).toFixed(1)} L</li>
-                      <li>Available weight for fuel: {(
-                        CG_LIMITS.MAX_TAKEOFF_WEIGHT - 
-                        inputs.emptyWeight - 
-                        inputs.pilotWeight - 
-                        inputs.passengerWeight - 
-                        inputs.baggageWeight
-                      ).toFixed(1)} kg</li>
-                    </ul>
-                  </div>
-                )}
-              </div>
+            <AlertDescription>
+              {globalError && <p className="font-semibold mb-2">{globalError}</p>}
+              {Object.keys(errors).length > 0 && (
+                <ul className="list-disc pl-4 space-y-1">
+                  {Object.entries(errors).map(([field, message]) => (
+                    <li key={field} className="text-sm">
+                      {message}
+                    </li>
+                  ))}
+                </ul>
+              )}
             </AlertDescription>
           </Alert>
         )}
@@ -448,37 +535,37 @@ export default function WeightAndBalancePage() {
                     <tbody>
                       <tr>
                         <td>Trip Fuel</td>
-                        <td className="text-right">{inputs.flightTime.trip.toFixed(2)}</td>
-                        <td className="text-right">{(inputs.flightTime.trip * CONVERSION_FACTORS.FLIGHT_TIME_TO_FUEL_RATE).toFixed(2)}</td>
-                        <td className="text-right">{(inputs.flightTime.trip * CONVERSION_FACTORS.FLIGHT_TIME_TO_FUEL_RATE * CONVERSION_FACTORS.LITRES_TO_KG).toFixed(2)}</td>
+                        <td className="text-right">{toNumber(inputs.flightTime.trip).toFixed(2)}</td>
+                        <td className="text-right">{(toNumber(inputs.flightTime.trip) * CONVERSION_FACTORS.FLIGHT_TIME_TO_FUEL_RATE).toFixed(2)}</td>
+                        <td className="text-right">{(toNumber(inputs.flightTime.trip) * CONVERSION_FACTORS.FLIGHT_TIME_TO_FUEL_RATE * CONVERSION_FACTORS.LITRES_TO_KG).toFixed(2)}</td>
                       </tr>
                       <tr>
                         <td>Contingency (10% of Trip)</td>
-                        <td className="text-right">{inputs.flightTime.contingency.toFixed(2)}</td>
-                        <td className="text-right">{(inputs.flightTime.contingency * CONVERSION_FACTORS.FLIGHT_TIME_TO_FUEL_RATE).toFixed(2)}</td>
-                        <td className="text-right">{(inputs.flightTime.contingency * CONVERSION_FACTORS.FLIGHT_TIME_TO_FUEL_RATE * CONVERSION_FACTORS.LITRES_TO_KG).toFixed(2)}</td>
+                        <td className="text-right">{toNumber(inputs.flightTime.contingency).toFixed(2)}</td>
+                        <td className="text-right">{(toNumber(inputs.flightTime.contingency) * CONVERSION_FACTORS.FLIGHT_TIME_TO_FUEL_RATE).toFixed(2)}</td>
+                        <td className="text-right">{(toNumber(inputs.flightTime.contingency) * CONVERSION_FACTORS.FLIGHT_TIME_TO_FUEL_RATE * CONVERSION_FACTORS.LITRES_TO_KG).toFixed(2)}</td>
                       </tr>
                       <tr>
                         <td>Alternate</td>
-                        <td className="text-right">{inputs.flightTime.alternate.toFixed(2)}</td>
-                        <td className="text-right">{(inputs.flightTime.alternate * CONVERSION_FACTORS.FLIGHT_TIME_TO_FUEL_RATE).toFixed(2)}</td>
-                        <td className="text-right">{(inputs.flightTime.alternate * CONVERSION_FACTORS.FLIGHT_TIME_TO_FUEL_RATE * CONVERSION_FACTORS.LITRES_TO_KG).toFixed(2)}</td>
+                        <td className="text-right">{toNumber(inputs.flightTime.alternate).toFixed(2)}</td>
+                        <td className="text-right">{(toNumber(inputs.flightTime.alternate) * CONVERSION_FACTORS.FLIGHT_TIME_TO_FUEL_RATE).toFixed(2)}</td>
+                        <td className="text-right">{(toNumber(inputs.flightTime.alternate) * CONVERSION_FACTORS.FLIGHT_TIME_TO_FUEL_RATE * CONVERSION_FACTORS.LITRES_TO_KG).toFixed(2)}</td>
                       </tr>
                       <tr>
                         <td>Other</td>
-                        <td className="text-right">{inputs.flightTime.other.toFixed(2)}</td>
-                        <td className="text-right">{(inputs.flightTime.other * CONVERSION_FACTORS.FLIGHT_TIME_TO_FUEL_RATE).toFixed(2)}</td>
-                        <td className="text-right">{(inputs.flightTime.other * CONVERSION_FACTORS.FLIGHT_TIME_TO_FUEL_RATE * CONVERSION_FACTORS.LITRES_TO_KG).toFixed(2)}</td>
+                        <td className="text-right">{toNumber(inputs.flightTime.other).toFixed(2)}</td>
+                        <td className="text-right">{(toNumber(inputs.flightTime.other) * CONVERSION_FACTORS.FLIGHT_TIME_TO_FUEL_RATE).toFixed(2)}</td>
+                        <td className="text-right">{(toNumber(inputs.flightTime.other) * CONVERSION_FACTORS.FLIGHT_TIME_TO_FUEL_RATE * CONVERSION_FACTORS.LITRES_TO_KG).toFixed(2)}</td>
                       </tr>
                       <tr>
                         <td>Reserve</td>
-                        <td className="text-right">{inputs.flightTime.reserve.toFixed(2)}</td>
-                        <td className="text-right">{(inputs.flightTime.reserve * CONVERSION_FACTORS.FLIGHT_TIME_TO_FUEL_RATE).toFixed(2)}</td>
-                        <td className="text-right">{(inputs.flightTime.reserve * CONVERSION_FACTORS.FLIGHT_TIME_TO_FUEL_RATE * CONVERSION_FACTORS.LITRES_TO_KG).toFixed(2)}</td>
+                        <td className="text-right">{toNumber(inputs.flightTime.reserve).toFixed(2)}</td>
+                        <td className="text-right">{(toNumber(inputs.flightTime.reserve) * CONVERSION_FACTORS.FLIGHT_TIME_TO_FUEL_RATE).toFixed(2)}</td>
+                        <td className="text-right">{(toNumber(inputs.flightTime.reserve) * CONVERSION_FACTORS.FLIGHT_TIME_TO_FUEL_RATE * CONVERSION_FACTORS.LITRES_TO_KG).toFixed(2)}</td>
                       </tr>
                       <tr>
                         <td>Taxi</td>
-                        <td className="text-right">{inputs.flightTime.taxi.toFixed(2)}</td>
+                        <td className="text-right">{toNumber(inputs.flightTime.taxi).toFixed(2)}</td>
                         <td className="text-right">{results.actualFuelState.taxi.litres.toFixed(2)}</td>
                         <td className="text-right">{results.actualFuelState.taxi.weight.toFixed(2)}</td>
                       </tr>

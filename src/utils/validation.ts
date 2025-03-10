@@ -2,21 +2,31 @@ import { PerformanceInputs } from "./performance";
 import { 
   WeightBalanceInputs, 
   calculateMinimumFuel,
-  CG_LIMITS
+  CG_LIMITS,
+  DEFAULT_ARMS,
+  validateCGLimits
 } from "./weight-balance";
+import {
+  ValidationError as WeightBalanceValidationError,
+  WeightLimitError,
+  CGLimitError,
+  FuelCapacityError,
+  ErrorDetails
+} from "./errors";
 
 // Define recursive type for nested objects to avoid using 'any'
 export type NestedObject = {
   [key: string]: string | number | boolean | null | undefined | NestedObject;
 };
 
-export interface ValidationError {
+export interface FieldValidationError {
   field: string;
   message: string;
+  type: 'error' | 'warning';
 }
 
-export function validateRequiredFields(inputs: PerformanceInputs): ValidationError[] {
-  const errors: ValidationError[] = [];
+export function validateRequiredFields(inputs: PerformanceInputs): FieldValidationError[] {
+  const errors: FieldValidationError[] = [];
 
   // Required fields validation
   const requiredFields = [
@@ -46,7 +56,8 @@ export function validateRequiredFields(inputs: PerformanceInputs): ValidationErr
     if (current === '' || current === null || current === undefined) {
       errors.push({
         field: path,
-        message: `${label} is required`
+        message: `${label} is required`,
+        type: 'error'
       });
     }
   });
@@ -55,7 +66,8 @@ export function validateRequiredFields(inputs: PerformanceInputs): ValidationErr
   if (inputs.departure.airport && !/^[A-Z]{4}$/.test(inputs.departure.airport)) {
     errors.push({
       field: 'departure.airport',
-      message: 'Must be a valid 4-letter ICAO code'
+      message: 'Must be a valid 4-letter ICAO code',
+      type: 'error'
     });
   }
 
@@ -87,7 +99,8 @@ export function validateRequiredFields(inputs: PerformanceInputs): ValidationErr
     if (!isNaN(value) && (value < min || value > max)) {
       errors.push({
         field: path,
-        message: `${label} must be between ${min} and ${max} ${units}`
+        message: `${label} must be between ${min} and ${max} ${units}`,
+        type: 'error'
       });
     }
   });
@@ -96,89 +109,264 @@ export function validateRequiredFields(inputs: PerformanceInputs): ValidationErr
   if (inputs.departure.runway && !/^\d{2}[LCR]?$/.test(inputs.departure.runway)) {
     errors.push({
       field: 'departure.runway',
-      message: 'Must be valid runway designation (e.g., 18, 18L)'
+      message: 'Must be valid runway designation (e.g., 18, 18L)',
+      type: 'error'
     });
   }
 
   return errors;
 }
 
-export function formatValidationErrors(errors: ValidationError[]): { [key: string]: string } {
-  return errors.reduce((acc, { field, message }) => ({
-    ...acc,
-    [field]: message
-  }), {});
+export function formatValidationErrors(errors: FieldValidationError[]): { [key: string]: string } {
+  return errors.reduce((acc, error) => {
+    if (error.field) {
+      acc[error.field] = error.message;
+    }
+    return acc;
+  }, {} as { [key: string]: string });
 }
 
-// Start writing validations for weight and balance from here.
 
-export function validateWeightBalanceInputs(inputs: WeightBalanceInputs): ValidationError[] {
-  const errors: ValidationError[] = [];
+export function validateWeightBalanceInputs(inputs: WeightBalanceInputs): ErrorDetails[] {
+  const errors: ErrorDetails[] = [];
+
+  // Empty weight validation
+  try {
+    const emptyWeight = Number(inputs.emptyWeight);
+    if (!inputs.emptyWeight) {
+      throw new WeightBalanceValidationError("Empty Weight is required", "emptyWeight");
+    }
+    if (isNaN(emptyWeight)) {
+      throw new WeightBalanceValidationError("Empty Weight must be a valid number", "emptyWeight");
+    }
+    if (emptyWeight <= 0) {
+      throw new WeightBalanceValidationError("Empty Weight must be greater than 0", "emptyWeight");
+    }
+    if (emptyWeight > CG_LIMITS.MAX_TAKEOFF_WEIGHT) {
+      throw new WeightLimitError(`Empty Weight cannot exceed maximum takeoff weight (${CG_LIMITS.MAX_TAKEOFF_WEIGHT} kg)`);
+    }
+  } catch (error) {
+    if (error instanceof WeightBalanceValidationError || error instanceof WeightLimitError) {
+      errors.push({
+        message: error.message,
+        type: error.type,
+        category: error.category,
+        field: error.field,
+        code: error.code
+      });
+    }
+  }
+
+  // Empty arm validation
+  try {
+    if (inputs.emptyArm) {
+      const emptyArm = Number(inputs.emptyArm);
+      if (isNaN(emptyArm)) {
+        throw new WeightBalanceValidationError("Empty Arm must be a valid number", "emptyArm");
+      }
+      if (emptyArm < CG_LIMITS.FORWARD || emptyArm > CG_LIMITS.AFT) {
+        throw new CGLimitError(`Empty Arm must be between ${CG_LIMITS.FORWARD} and ${CG_LIMITS.AFT} meters`);
+      }
+    }
+  } catch (error) {
+    if (error instanceof WeightBalanceValidationError || error instanceof CGLimitError) {
+      errors.push({
+        message: error.message,
+        type: error.type,
+        category: error.category,
+        field: error.field,
+        code: error.code
+      });
+    }
+  }
+
+  // Pilot weight validation
+  try {
+    const pilotWeight = Number(inputs.pilotWeight);
+    if (!inputs.pilotWeight) {
+      throw new WeightBalanceValidationError("Pilot Weight is required", "pilotWeight");
+    }
+    if (isNaN(pilotWeight)) {
+      throw new WeightBalanceValidationError("Pilot Weight must be a valid number", "pilotWeight");
+    }
+    if (pilotWeight <= 0) {
+      throw new WeightBalanceValidationError("Pilot Weight must be greater than 0", "pilotWeight");
+    }
+  } catch (error) {
+    if (error instanceof WeightBalanceValidationError) {
+      errors.push({
+        message: error.message,
+        type: error.type,
+        category: error.category,
+        field: error.field,
+        code: error.code
+      });
+    }
+  }
+
+  // Passenger weight validation
+  try {
+    if (inputs.passengerWeight) {
+      const passengerWeight = Number(inputs.passengerWeight);
+      if (isNaN(passengerWeight)) {
+        throw new WeightBalanceValidationError("Passenger Weight must be a valid number", "passengerWeight");
+      }
+      if (passengerWeight < 0) {
+        throw new WeightBalanceValidationError("Passenger Weight cannot be negative", "passengerWeight");
+      }
+    }
+  } catch (error) {
+    if (error instanceof WeightBalanceValidationError) {
+      errors.push({
+        message: error.message,
+        type: error.type,
+        category: error.category,
+        field: error.field,
+        code: error.code
+      });
+    }
+  }
+
+  // Baggage weight validation
+  try {
+    const baggageWeight = Number(inputs.baggageWeight);
+    if (inputs.baggageWeight && isNaN(baggageWeight)) {
+      throw new WeightBalanceValidationError("Baggage Weight must be a valid number", "baggageWeight");
+    }
+    if (baggageWeight < 0) {
+      throw new WeightBalanceValidationError("Baggage Weight cannot be negative", "baggageWeight");
+    }
+    if (baggageWeight > CG_LIMITS.MAX_BAGGAGE_WEIGHT) {
+      throw new WeightLimitError(`Baggage Weight cannot exceed ${CG_LIMITS.MAX_BAGGAGE_WEIGHT} kg`);
+    }
+  } catch (error) {
+    if (error instanceof WeightBalanceValidationError || error instanceof WeightLimitError) {
+      errors.push({
+        message: error.message,
+        type: error.type,
+        category: error.category,
+        field: error.field,
+        code: error.code
+      });
+    }
+  }
+
+  // Flight time validations
+  const requiredFlightTimeFields: (keyof WeightBalanceInputs['flightTime'])[] = [
+    'trip', 'alternate', 'reserve', 'taxi'
+  ];
   
-  // Mandatory field validation with NaN and non-negative check
-  if (inputs.emptyWeight == null || isNaN(inputs.emptyWeight)) {
-    errors.push({ field: "emptyWeight", message: "Empty Weight is required" });
-  } else if (inputs.emptyWeight < 0) {
-    errors.push({ field: "emptyWeight", message: "Empty Weight must be zero or positive" });
-  }
-  if (inputs.pilotWeight == null || isNaN(inputs.pilotWeight)) {
-    errors.push({ field: "pilotWeight", message: "Pilot Weight is required" });
-  } else if (inputs.pilotWeight < 0) {
-    errors.push({ field: "pilotWeight", message: "Pilot Weight must be zero or positive" });
-  }
-  if (inputs.passengerWeight == null || isNaN(inputs.passengerWeight)) {
-    errors.push({ field: "passengerWeight", message: "Passenger Weight is required" });
-  } else if (inputs.passengerWeight < 0) {
-    errors.push({ field: "passengerWeight", message: "Passenger Weight must be zero or positive" });
-  }
-  if (inputs.baggageWeight == null || isNaN(inputs.baggageWeight)) {
-    errors.push({ field: "baggageWeight", message: "Baggage Weight is required" });
-  } else if (inputs.baggageWeight < 0) {
-    errors.push({ field: "baggageWeight", message: "Baggage Weight must be zero or positive" });
-  }
-  if (inputs.fuelMass == null || isNaN(inputs.fuelMass)) {
-    errors.push({ field: "fuelMass", message: "Fuel Mass is required" });
-  } else if (inputs.fuelMass < 0) {
-    errors.push({ field: "fuelMass", message: "Fuel Mass must be zero or positive" });
-  }
-  
-  const flightTimeFields: (keyof WeightBalanceInputs["flightTime"])[] = ["trip", "alternate", "other", "reserve", "taxi"];
-  flightTimeFields.forEach(field => {
-    if (inputs.flightTime[field] == null || isNaN(inputs.flightTime[field])) {
-      errors.push({ field: `flightTime.${field}`, message: `Flight Time ${field} is required` });
-    } else if (inputs.flightTime[field] < 0) {
-      errors.push({ field: `flightTime.${field}`, message: `Flight Time ${field} must be zero or positive` });
+  requiredFlightTimeFields.forEach(field => {
+    try {
+      const value = Number(inputs.flightTime[field]);
+      if (!inputs.flightTime[field]) {
+        throw new WeightBalanceValidationError(
+          `${field.charAt(0).toUpperCase() + field.slice(1)} time is required`,
+          `flightTime.${field}`
+        );
+      }
+      if (isNaN(value)) {
+        throw new WeightBalanceValidationError(
+          `${field.charAt(0).toUpperCase() + field.slice(1)} time must be a valid number`,
+          `flightTime.${field}`
+        );
+      }
+      if (value < 0) {
+        throw new WeightBalanceValidationError(
+          `${field.charAt(0).toUpperCase() + field.slice(1)} time cannot be negative`,
+          `flightTime.${field}`
+        );
+      }
+    } catch (error) {
+      if (error instanceof WeightBalanceValidationError) {
+        errors.push({
+          message: error.message,
+          type: error.type,
+          category: error.category,
+          field: error.field,
+          code: error.code
+        });
+      }
     }
   });
-  
-  // Maximum baggage weight check
-  if (inputs.baggageWeight > 20) {
-    errors.push({ field: "baggageWeight", message: "Baggage Weight cannot exceed 20 kg" });
-  }
-  
-  // Calculate takeoff weight with proper precision
-  const takeoffWeight = Number((
-    inputs.emptyWeight + 
-    inputs.pilotWeight + 
-    inputs.passengerWeight + 
-    inputs.fuelMass + 
-    inputs.baggageWeight
-  ).toFixed(2));
 
-  // Add small tolerance (0.01) to account for floating-point precision
-  if (takeoffWeight > (CG_LIMITS.MAX_TAKEOFF_WEIGHT + 0.01)) {
-    errors.push({ 
-      field: "takeoffWeight", 
-      message: `Takeoff Weight (${takeoffWeight} kg) cannot exceed ${CG_LIMITS.MAX_TAKEOFF_WEIGHT} kg` 
-    });
+  // Total weight validation
+  try {
+    const totalWeight = Number(inputs.emptyWeight) +
+      Number(inputs.pilotWeight) +
+      Number(inputs.passengerWeight) +
+      Number(inputs.baggageWeight) +
+      Number(inputs.fuelMass);
+
+    if (totalWeight > CG_LIMITS.MAX_TAKEOFF_WEIGHT) {
+      throw new WeightLimitError(
+        `Total weight (${totalWeight.toFixed(1)} kg) exceeds maximum takeoff weight of ${CG_LIMITS.MAX_TAKEOFF_WEIGHT} kg`
+      );
+    }
+  } catch (error) {
+    if (error instanceof WeightLimitError) {
+      errors.push({
+        message: error.message,
+        type: error.type,
+        category: error.category,
+        field: error.field,
+        code: error.code
+      });
+    }
   }
-  
-  // Fuel capacity check (total fuel in litres should not exceed 120 L)
-  const totalFuelLitres = calculateMinimumFuel(inputs);
-  if (totalFuelLitres > 120) {
-    errors.push({ field: "fuelMass", message: "Fuel capacity cannot exceed 120 L" });
+
+  // CG validation
+  try {
+    const totalWeight = Number(inputs.emptyWeight) +
+      Number(inputs.pilotWeight) +
+      Number(inputs.passengerWeight) +
+      Number(inputs.baggageWeight) +
+      Number(inputs.fuelMass);
+
+    const totalMoment = (Number(inputs.emptyWeight) * (Number(inputs.emptyArm) || DEFAULT_ARMS.emptyWeight)) +
+      ((Number(inputs.pilotWeight) + Number(inputs.passengerWeight)) * DEFAULT_ARMS.pilotPassenger) +
+      (Number(inputs.fuelMass) * DEFAULT_ARMS.fuel) +
+      (Number(inputs.baggageWeight) * DEFAULT_ARMS.baggage);
+
+    const cg = totalMoment / totalWeight;
+
+    if (!validateCGLimits(cg)) {
+      throw new CGLimitError(
+        `Center of gravity (${cg.toFixed(3)} m) is outside allowed limits (${CG_LIMITS.FORWARD}-${CG_LIMITS.AFT} m)`
+      );
+    }
+  } catch (error) {
+    if (error instanceof CGLimitError) {
+      errors.push({
+        message: error.message,
+        type: error.type,
+        category: error.category,
+        field: error.field,
+        code: error.code
+      });
+    }
   }
-  
+
+  // Fuel capacity validation
+  try {
+    const minimumFuelRequired = calculateMinimumFuel(inputs);
+    if (minimumFuelRequired > 120) {
+      throw new FuelCapacityError(
+        `Required fuel (${minimumFuelRequired.toFixed(1)}L) exceeds maximum fuel capacity of 120L`
+      );
+    }
+  } catch (error) {
+    if (error instanceof FuelCapacityError) {
+      errors.push({
+        message: error.message,
+        type: error.type,
+        category: error.category,
+        field: error.field,
+        code: error.code
+      });
+    }
+  }
+
   return errors;
 }
 
